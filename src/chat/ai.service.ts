@@ -34,12 +34,31 @@ const RETRY_CONFIG = {
   retryableErrors: ["overloaded_error", "api_error", "timeout"],
 };
 
+/**
+ * AI Service
+ *
+ * Core service for integrating with Anthropic's Claude AI models in the SaaS application.
+ * Handles chat completions with support for both streaming and non-streaming responses,
+ * implements caching for performance, retry logic for reliability, and comprehensive
+ * usage tracking for billing and analytics. Uses Redis for caching and real-time metrics.
+ */
 @Injectable()
 export class AIService {
+  /** Logger instance for AI service operations and errors */
   private readonly logger = new Logger(AIService.name);
+
+  /** Anthropic API client for AI model interactions */
   private client: Anthropic;
+
+  /** Redis client for caching and real-time usage tracking */
   private redis: Redis;
 
+  /**
+   * Constructor - Initializes Anthropic client and Redis connection
+   * @param usageLogRepository - TypeORM repository for usage logging
+   * @param tenantRepository - TypeORM repository for tenant operations
+   * @param configService - Configuration service for API keys and settings
+   */
   constructor(
     @InjectRepository(UsageLog)
     private usageLogRepository: Repository<UsageLog>,
@@ -55,6 +74,11 @@ export class AIService {
     );
   }
 
+  /**
+   * Calculate exponential backoff delay for retries
+   * @param attempt - Current retry attempt number (0-based)
+   * @returns Delay in milliseconds with jitter
+   */
   private calcDelay(attempt: number): number {
     const base = Math.min(
       RETRY_CONFIG.baseDelay * Math.pow(2, attempt),
@@ -63,6 +87,16 @@ export class AIService {
     return base + Math.random() * 1000;
   }
 
+  /**
+   * Stream chat response from AI model
+   *
+   * Main method for generating AI responses with support for Server-Sent Events streaming.
+   * Implements caching, retry logic, usage tracking, and error handling.
+   * Can operate in both streaming and non-streaming modes based on response object presence.
+   *
+   * @param options - Streaming options including messages, model, and user context
+   * @returns Promise<CompletionResult> - AI response content and token usage statistics
+   */
   async streamChatResponse(options: StreamOptions): Promise<CompletionResult> {
     const {
       messages,
@@ -78,7 +112,7 @@ export class AIService {
 
     while (attempt <= RETRY_CONFIG.maxRetries) {
       try {
-        // Check cache
+        // Check cache for non-streaming requests
         const cacheKey = `cache:chat:${Buffer.from(JSON.stringify(messages)).toString("base64").slice(0, 64)}`;
         const cached = await this.redis.get(cacheKey);
 
@@ -87,7 +121,7 @@ export class AIService {
           return JSON.parse(cached);
         }
 
-        // Set up SSE if response object provided
+        // Configure Server-Sent Events headers for streaming
         if (res) {
           res.setHeader("Content-Type", "text/event-stream");
           res.setHeader("Cache-Control", "no-cache");
@@ -100,6 +134,7 @@ export class AIService {
         let inputTokens = 0;
         let outputTokens = 0;
 
+        // Initialize Anthropic streaming
         const stream = this.client.messages.stream({
           model,
           max_tokens: maxTokens,
@@ -107,6 +142,7 @@ export class AIService {
           messages: messages as any,
         });
 
+        // Handle streaming text chunks
         stream.on("text", (text: string) => {
           fullContent += text;
           if (res) {
@@ -116,6 +152,7 @@ export class AIService {
           }
         });
 
+        // Capture token usage from final message
         stream.on("message", (msg: any) => {
           inputTokens = msg.usage?.input_tokens || 0;
           outputTokens = msg.usage?.output_tokens || 0;
@@ -129,7 +166,7 @@ export class AIService {
           totalTokens: inputTokens + outputTokens,
         };
 
-        // Track usage asynchronously
+        // Track usage asynchronously (don't block response)
         this.trackUsage({
           userId,
           tenantId,
@@ -138,7 +175,7 @@ export class AIService {
           usage,
         }).catch((err) => this.logger.error("Usage tracking failed", err));
 
-        // Cache short responses
+        // Cache short responses for 5 minutes
         if (outputTokens < 500) {
           await this.redis.setex(
             cacheKey,
@@ -147,6 +184,7 @@ export class AIService {
           );
         }
 
+        // Send completion event for streaming responses
         if (res) {
           res.write(`data: ${JSON.stringify({ type: "done", usage })}\n\n`);
           res.end();
@@ -154,6 +192,7 @@ export class AIService {
 
         return { content: fullContent, usage };
       } catch (err: any) {
+        // Determine if error is retryable
         const isRetryable =
           err.status === 529 ||
           err.status >= 500 ||
@@ -166,6 +205,7 @@ export class AIService {
             `AI API error (attempt ${attempt}/${RETRY_CONFIG.maxRetries}), retrying in ${delay}ms: ${err.message}`,
           );
 
+          // Notify client of retry for streaming responses
           if (res) {
             res.write(
               `data: ${JSON.stringify({ type: "retrying", attempt, delay })}\n\n`,
@@ -176,7 +216,7 @@ export class AIService {
           continue;
         }
 
-        // Handle specific errors
+        // Handle rate limiting specifically
         if (err.status === 429) {
           const retryAfter = parseInt(err.headers?.["retry-after"] || "60");
           if (res) {
@@ -188,6 +228,7 @@ export class AIService {
           throw new Error("AI API rate limit exceeded");
         }
 
+        // Log permanent failure and notify client
         this.logger.error(`AI stream failed permanently: ${err.message}`);
         if (res) {
           res.write(
@@ -202,12 +243,31 @@ export class AIService {
     throw new Error("Max retries exceeded");
   }
 
+  /**
+   * Generate non-streaming AI completion
+   *
+   * Convenience method for non-streaming completions that internally calls streamChatResponse
+   * without a response object, ensuring consistent behavior and caching.
+   *
+   * @param options - Completion options (same as StreamOptions but without res)
+   * @returns Promise<CompletionResult> - AI response content and usage statistics
+   */
   async complete(
     options: Omit<StreamOptions, "res">,
   ): Promise<CompletionResult> {
     return this.streamChatResponse({ ...options, res: undefined });
   }
 
+  /**
+   * Track AI usage for billing and analytics
+   *
+   * Records token consumption in the database and updates real-time counters.
+   * Updates tenant's total token usage and maintains daily usage metrics in Redis.
+   * Runs asynchronously to avoid blocking AI response delivery.
+   *
+   * @param params - Usage tracking parameters including user, tenant, and token counts
+   * @returns Promise<void>
+   */
   private async trackUsage(params: {
     userId: string;
     tenantId: string;
@@ -217,7 +277,7 @@ export class AIService {
   }): Promise<void> {
     const { userId, tenantId, conversationId, model, usage } = params;
 
-    // Save to database
+    // Persist usage log to database
     const log = this.usageLogRepository.create({
       userId,
       tenantId,
@@ -230,14 +290,14 @@ export class AIService {
 
     await this.usageLogRepository.save(log);
 
-    // Update tenant token counter
+    // Update tenant's running token total
     await this.tenantRepository.increment(
       { id: tenantId },
       "tokensUsed",
       usage.totalTokens,
     );
 
-    // Update Redis counter for real-time dashboard
+    // Update Redis counter for real-time dashboard (expires after 7 days)
     const today = new Date().toISOString().split("T")[0];
     await this.redis.incrby(`usage:${tenantId}:${today}`, usage.totalTokens);
     await this.redis.expire(`usage:${tenantId}:${today}`, 86400 * 7);

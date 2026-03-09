@@ -6,10 +6,25 @@ import { ConfigService } from '@nestjs/config';
 import { UsageLog } from '../database/entities/usage-log.entity';
 import { User } from '../database/entities/user.entity';
 
+/**
+ * Usage Service
+ *
+ * Provides comprehensive usage analytics and reporting for the AI SaaS application.
+ * Tracks token consumption, API usage patterns, and generates dashboard metrics.
+ * Combines database-stored usage logs with real-time Redis counters for accurate
+ * billing and quota management. Supports tenant-level and user-level analytics.
+ */
 @Injectable()
 export class UsageService {
+  /** Redis client for real-time usage counters and caching */
   private redis: Redis;
 
+  /**
+   * Constructor - Initializes Redis connection and injects repositories
+   * @param usageLogRepository - TypeORM repository for UsageLog entity operations
+   * @param userRepository - TypeORM repository for User entity operations
+   * @param configService - Configuration service for Redis connection settings
+   */
   constructor(
     @InjectRepository(UsageLog)
     private usageLogRepository: Repository<UsageLog>,
@@ -20,6 +35,18 @@ export class UsageService {
     this.redis = new Redis(configService.get<string>('REDIS_URL') || 'redis://localhost:6379');
   }
 
+  /**
+   * Get comprehensive usage dashboard data
+   *
+   * Generates a complete usage dashboard including quota status, today's usage,
+   * 30-day summary statistics, and daily breakdown. Combines data from database
+   * and Redis for real-time accuracy. Used for displaying usage analytics
+   * and monitoring consumption patterns.
+   *
+   * @param tenantId - Tenant identifier for multi-tenancy support
+   * @param user - Currently authenticated user with tenant information
+   * @returns Promise<DashboardData> - Complete usage dashboard with metrics and trends
+   */
   async getDashboard(tenantId: string, user: any) {
     const today = new Date().toISOString().split('T')[0];
     const todayTokens = parseInt((await this.redis.get(`usage:${tenantId}:${today}`)) || '0');
@@ -61,6 +88,18 @@ export class UsageService {
     };
   }
 
+  /**
+   * Get paginated usage logs
+   *
+   * Retrieves detailed usage log entries for a tenant with pagination support.
+   * Each log entry contains information about individual API calls, token usage,
+   * and associated user information. Useful for detailed usage analysis and auditing.
+   *
+   * @param tenantId - Tenant identifier for multi-tenancy support
+   * @param page - Page number for pagination (default: 1)
+   * @param limit - Number of log entries per page (default: 50)
+   * @returns Promise<{logs: UsageLog[], page: number, limit: number, total: number}>
+   */
   async getLogs(tenantId: string, page: number = 1, limit: number = 50) {
     const [logs, total] = await this.usageLogRepository.findAndCount({
       where: { tenantId },

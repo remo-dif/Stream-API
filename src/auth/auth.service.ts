@@ -10,14 +10,38 @@ import { Tenant } from '../database/entities/tenant.entity';
 import { RegisterDto, LoginDto, AuthResponseDto } from './dto/auth.dto';
 import { JwtPayload } from './jwt.strategy';
 
+/**
+ * Authentication Service
+ *
+ * Handles all authentication-related business logic for the AI SaaS application.
+ * Implements secure user registration, login, JWT token management, and session handling.
+ * Uses bcrypt for password hashing, Redis for token storage/blacklisting, and supports
+ * multi-tenant authentication with role-based access control.
+ */
 @Injectable()
 export class AuthService {
+  /** Logger instance for authentication events and errors */
   private readonly logger = new Logger(AuthService.name);
+
+  /** Redis client for token storage and blacklisting */
   private redis: Redis;
+
+  /** JWT access token expiry time (24 hours) */
   private readonly TOKEN_EXPIRY = '24h';
+
+  /** JWT refresh token expiry time (30 days) */
   private readonly REFRESH_TOKEN_EXPIRY = '30d';
+
+  /** Number of salt rounds for bcrypt password hashing */
   private readonly SALT_ROUNDS = 12;
 
+  /**
+   * Constructor - Injects required dependencies and initializes Redis
+   * @param userRepository - TypeORM repository for User entity operations
+   * @param tenantRepository - TypeORM repository for Tenant entity operations
+   * @param jwtService - NestJS JWT service for token generation and verification
+   * @param configService - Configuration service for environment variables
+   */
   constructor(
     @InjectRepository(User)
     private userRepository: Repository<User>,
@@ -29,6 +53,17 @@ export class AuthService {
     this.redis = new Redis(configService.get<string>('REDIS_URL') || 'redis://localhost:6379');
   }
 
+  /**
+   * Register a new user
+   *
+   * Creates a new user account with secure password hashing. Automatically assigns
+   * USER role if not specified. Validates that email is not already registered
+   * within the tenant. Creates audit log entry for the registration.
+   *
+   * @param dto - Registration data including email, password, and tenant ID
+   * @returns Promise<User> - Created user object (without password hash)
+   * @throws ConflictException - If email is already registered in the tenant
+   */
   async register(dto: RegisterDto): Promise<Omit<User, 'passwordHash'>> {
     // Check if user exists
     const existing = await this.userRepository.findOne({
@@ -57,6 +92,17 @@ export class AuthService {
     return userWithoutPassword;
   }
 
+  /**
+   * Authenticate user and generate tokens
+   *
+   * Validates user credentials, generates JWT access and refresh tokens,
+   * and stores the refresh token in Redis for security. Updates last login timestamp.
+   * Only active users can authenticate.
+   *
+   * @param dto - Login credentials (email and password)
+   * @returns Promise<AuthResponseDto> - Access token, refresh token, and user info
+   * @throws UnauthorizedException - If credentials are invalid or user is inactive
+   */
   async login(dto: LoginDto): Promise<AuthResponseDto> {
     // Find user with tenant
     const user = await this.userRepository.findOne({
@@ -122,6 +168,17 @@ export class AuthService {
     };
   }
 
+  /**
+   * Logout user and blacklist token
+   *
+   * Invalidates the current access token by adding it to Redis blacklist.
+   * The token remains blacklisted until its natural expiry time.
+   * Logs the logout event for security auditing.
+   *
+   * @param userId - ID of the user logging out
+   * @param token - JWT access token to blacklist
+   * @returns Promise<void>
+   */
   async logout(userId: string, token: string): Promise<void> {
     try {
       const decoded = this.jwtService.decode(token) as any;
@@ -135,6 +192,17 @@ export class AuthService {
     }
   }
 
+  /**
+   * Refresh access token using refresh token
+   *
+   * Validates the refresh token and generates a new access token without requiring
+   * re-authentication. The refresh token must be valid and the user must still be active.
+   * Does not extend the refresh token's lifetime.
+   *
+   * @param refreshToken - Valid refresh token from login
+   * @returns Promise<{accessToken: string, expiresIn: number}> - New access token
+   * @throws UnauthorizedException - If refresh token is invalid or user is inactive
+   */
   async refreshTokens(refreshToken: string): Promise<{ accessToken: string; expiresIn: number }> {
     try {
       const decoded = this.jwtService.verify(refreshToken, {
