@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsString, IsOptional, IsUUID, MaxLength, MinLength } from 'class-validator';
+import { IsString, IsOptional, MaxLength, MinLength } from 'class-validator';
 
 export class CreateConversationDto {
   @ApiProperty({ example: 'My AI Conversation', required: false })

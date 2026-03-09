@@ -116,7 +116,8 @@ export class AuthController {
   @ApiOperation({ summary: 'Get current user profile' })
   @ApiResponse({ status: 200, description: 'User profile' })
   async getProfile(@Req() req: Request & { user: RequestUser }) {
-    const { passwordHash, ...user } = req.user;
+    const { passwordHash: _passwordHash, ...user } = req.user;
+    void _passwordHash; // Explicitly ignore password hash
     return {
       ...user,
       tokenQuota: req.user.tenant.tokenQuota,

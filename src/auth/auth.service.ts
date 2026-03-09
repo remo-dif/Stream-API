@@ -88,7 +88,8 @@ export class AuthService {
     const saved = await this.userRepository.save(user);
     this.logger.log(`User registered: ${saved.email} (tenant: ${saved.tenantId})`);
 
-    const { passwordHash: _, ...userWithoutPassword } = saved;
+    const { passwordHash: _passwordHash, ...userWithoutPassword } = saved;
+    void _passwordHash; // Explicitly ignore password hash
     return userWithoutPassword;
   }
 

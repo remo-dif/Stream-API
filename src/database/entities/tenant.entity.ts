@@ -38,11 +38,11 @@ export enum TenantPlan {
 export class Tenant {
   /** Unique identifier for the tenant (UUID) */
   @PrimaryGeneratedColumn('uuid')
-  id: string;
+  id!: string;
 
   /** Display name of the tenant/organization */
   @Column({ length: 255 })
-  name: string;
+  name!: string;
 
   /** Current subscription plan determining features and token limits */
   @Column({
@@ -50,39 +50,39 @@ export class Tenant {
     enum: TenantPlan,
     default: TenantPlan.STARTER,
   })
-  plan: TenantPlan;
+  plan!: TenantPlan;
 
   /** Maximum number of tokens allowed per billing period */
   @Column({ name: 'token_quota', type: 'bigint', default: 1000000 })
-  tokenQuota: number;
+  tokenQuota!: number;
 
   /** Number of tokens consumed so far in the current billing period */
   @Column({ name: 'tokens_used', type: 'bigint', default: 0 })
-  tokensUsed: number;
+  tokensUsed!: number;
 
   /** Flag indicating if the tenant account is active (can access the platform) */
   @Column({ name: 'is_active', default: true })
-  isActive: boolean;
+  isActive!: boolean;
 
   /** Flexible JSON storage for tenant-specific configuration and preferences */
   @Column({ type: 'jsonb', default: {} })
-  settings: Record<string, any>;
+  settings!: Record<string, any>;
 
   /** Timestamp when the tenant was created */
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
-  createdAt: Date;
+  createdAt!: Date;
 
   /** Timestamp when the tenant was last updated */
   @UpdateDateColumn({ name: 'updated_at', type: 'timestamptz' })
-  updatedAt: Date;
+  updatedAt!: Date;
 
   // Relations
 
   /** One-to-many relationship with User (tenant has many users) */
   @OneToMany(() => User, (user) => user.tenant)
-  users: User[];
+  users!: User[];
 
   /** One-to-many relationship with Conversation (tenant has many conversations) */
   @OneToMany(() => Conversation, (conversation) => conversation.tenant)
-  conversations: Conversation[];
+  conversations!: Conversation[];
 }
