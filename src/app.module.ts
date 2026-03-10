@@ -1,15 +1,14 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
-import { TypeOrmModule } from '@nestjs/typeorm';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { BullModule } from '@nestjs/bullmq';
+import { SupabaseModule } from './supabase/supabase.module';
 import { AuthModule } from './auth/auth.module';
 import { ChatModule } from './chat/chat.module';
 import { UsageModule } from './usage/usage.module';
 import { AdminModule } from './admin/admin.module';
 import { JobsModule } from './jobs/jobs.module';
 import { TenantsModule } from './tenants/tenants.module';
-import { DatabaseModule } from './database/database.module';
 import { QueueModule } from './queue/queue.module';
 
 @Module({
@@ -20,19 +19,6 @@ import { QueueModule } from './queue/queue.module';
       envFilePath: '.env',
     }),
 
-    // Database
-    TypeOrmModule.forRoot({
-      type: 'postgres',
-      url: process.env.DATABASE_URL,
-      entities: [__dirname + '/**/*.entity{.ts,.js}'],
-      synchronize: false, // Use migrations in production
-      logging: process.env.NODE_ENV === 'development',
-      ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
-      extra: {
-        max: 20,
-        connectionTimeoutMillis: 2000,
-      },
-    }),
 
     // Redis rate limiting
     ThrottlerModule.forRoot([
@@ -57,7 +43,7 @@ import { QueueModule } from './queue/queue.module';
     }),
 
     // Feature modules
-    DatabaseModule,
+    SupabaseModule,
     AuthModule,
     ChatModule,
     UsageModule,

@@ -1,6 +1,6 @@
-import { Controller, Post, Get, Body, Param, UseGuards } from '@nestjs/common';
+import { Controller, Post, Get, Body, Param, UseGuards, Req } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
-import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
+import { SupabaseAuthGuard } from '../auth/guards/supabase-auth.guard';
 import { QuotaGuard } from '../common/guards/quota.guard';
 import { CurrentUser, TenantId } from '../common/decorators/auth.decorators';
 import { JobsService } from './jobs.service';
@@ -15,12 +15,12 @@ import { RequestUser } from '../auth/jwt.strategy';
  *
  * @ApiTags jobs - Swagger documentation tag for grouping job endpoints
  * @Controller api/v1/jobs - Base route for all job management endpoints
- * @UseGuards JwtAuthGuard, QuotaGuard - Requires authentication and checks usage quotas
+ * @UseGuards SupabaseAuthGuard, QuotaGuard - Requires authentication and checks usage quotas
  * @ApiBearerAuth - Requires Bearer token authentication for Swagger docs
  */
 @ApiTags('jobs')
 @Controller('api/v1/jobs')
-@UseGuards(JwtAuthGuard, QuotaGuard)
+@UseGuards(SupabaseAuthGuard, QuotaGuard)
 @ApiBearerAuth()
 export class JobsController {
   /**

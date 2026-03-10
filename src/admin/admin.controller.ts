@@ -1,6 +1,6 @@
 import { Controller, Get, Patch, Param, Body, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
-import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
+import { SupabaseAuthGuard } from '../auth/guards/supabase-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles, TenantId } from '../common/decorators/auth.decorators';
 import { UserRole } from '../database/entities/user.entity';
@@ -15,13 +15,13 @@ import { AdminService } from './admin.service';
  *
  * @ApiTags admin - Swagger documentation tag for grouping admin endpoints
  * @Controller api/v1/admin - Base route for all admin endpoints
- * @UseGuards JwtAuthGuard, RolesGuard - Requires authentication and role-based authorization
+ * @UseGuards SupabaseAuthGuard, RolesGuard - Requires authentication and role-based authorization
  * @Roles ADMIN, SUPERADMIN - Restricts access to admin roles only
  * @ApiBearerAuth - Requires Bearer token authentication for Swagger docs
  */
 @ApiTags('admin')
 @Controller('api/v1/admin')
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(SupabaseAuthGuard, RolesGuard)
 @Roles(UserRole.ADMIN, UserRole.SUPERADMIN)
 @ApiBearerAuth()
 export class AdminController {

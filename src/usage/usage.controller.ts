@@ -1,9 +1,9 @@
-import { Controller, Get, UseGuards, Query } from '@nestjs/common';
+import { Controller, Get, UseGuards, Query, Req } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
-import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
-import { TenantId, CurrentUser } from '../common/decorators/auth.decorators';
+import { SupabaseAuthGuard } from '../auth/guards/supabase-auth.guard';
 import { UsageService } from './usage.service';
 import { RequestUser } from '../auth/jwt.strategy';
+import { TenantId, CurrentUser } from '../common/decorators/auth.decorators';
 
 /**
  * Usage Controller
@@ -14,12 +14,12 @@ import { RequestUser } from '../auth/jwt.strategy';
  *
  * @ApiTags usage - Swagger documentation tag for grouping usage endpoints
  * @Controller api/v1/usage - Base route for all usage tracking endpoints
- * @UseGuards JwtAuthGuard - Requires authentication for all endpoints
+ * @UseGuards SupabaseAuthGuard - Requires authentication for all endpoints using Supabase
  * @ApiBearerAuth - Requires Bearer token authentication for Swagger docs
  */
 @ApiTags('usage')
 @Controller('api/v1/usage')
-@UseGuards(JwtAuthGuard)
+@UseGuards(SupabaseAuthGuard)
 @ApiBearerAuth()
 export class UsageController {
   /**

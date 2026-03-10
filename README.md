@@ -96,7 +96,7 @@ Once running, visit: http://localhost:3000/api/docs
 | Rate Limiting | @nestjs/throttler + Redis |
 | Background Jobs | BullMQ with @Processor decorator |
 | API Docs | Swagger with @ApiTags, @ApiOperation |
-| Guards | JwtAuthGuard, RolesGuard, QuotaGuard |
+| Guards | SupabaseAuthGuard, RolesGuard, QuotaGuard |
 
 ## Environment Variables
 

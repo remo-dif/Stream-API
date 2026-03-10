@@ -1,6 +1,6 @@
 import { Controller, Get, Post, Body, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
-import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
+import { SupabaseAuthGuard } from '../auth/guards/supabase-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles, TenantId } from '../common/decorators/auth.decorators';
 import { UserRole } from '../database/entities/user.entity';
@@ -15,12 +15,12 @@ import { TenantsService } from './tenants.service';
  *
  * @ApiTags tenants - Swagger documentation tag for grouping tenant endpoints
  * @Controller api/v1/tenants - Base route for all tenant management endpoints
- * @UseGuards JwtAuthGuard - Requires authentication for all endpoints
+ * @UseGuards SupabaseAuthGuard - Requires authentication for all endpoints using Supabase
  * @ApiBearerAuth - Requires Bearer token authentication for Swagger docs
  */
 @ApiTags('tenants')
 @Controller('api/v1/tenants')
-@UseGuards(JwtAuthGuard)
+@UseGuards(SupabaseAuthGuard)
 @ApiBearerAuth()
 export class TenantsController {
   /**
