@@ -1,5 +1,5 @@
 {
-  "name": "ai-saas-nestjs",
+  "name": "stream-saas-nestjs",
   "version": "1.0.0",
   "description": "Production-grade AI SaaS with NestJS and TypeScript",
   "scripts": {
