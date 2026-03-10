@@ -2,8 +2,7 @@ import { Controller, Get, UseGuards, Query, Req } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { SupabaseAuthGuard } from '../auth/guards/supabase-auth.guard';
 import { UsageService } from './usage.service';
-import { RequestUser } from '../auth/jwt.strategy';
-import { TenantId, CurrentUser } from '../common/decorators/auth.decorators';
+import { TenantId, CurrentUser, AuthUser } from '../common/decorators/auth.decorators';
 
 /**
  * Usage Controller
@@ -41,7 +40,7 @@ export class UsageController {
    */
   @Get('dashboard')
   @ApiOperation({ summary: 'Get usage dashboard data' })
-  async getDashboard(@TenantId() tenantId: string, @CurrentUser() user: RequestUser) {
+  async getDashboard(@TenantId() tenantId: string, @CurrentUser() user: AuthUser) {
     return this.usageService.getDashboard(tenantId, user);
   }
 

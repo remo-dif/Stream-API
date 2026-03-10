@@ -2,9 +2,8 @@ import { Controller, Post, Get, Body, Param, UseGuards, Req } from '@nestjs/comm
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { SupabaseAuthGuard } from '../auth/guards/supabase-auth.guard';
 import { QuotaGuard } from '../common/guards/quota.guard';
-import { CurrentUser, TenantId } from '../common/decorators/auth.decorators';
+import { CurrentUser, TenantId, AuthUser } from '../common/decorators/auth.decorators';
 import { JobsService } from './jobs.service';
-import { RequestUser } from '../auth/jwt.strategy';
 
 /**
  * Jobs Controller
@@ -47,7 +46,7 @@ export class JobsController {
   async submitJob(
     @Body('jobType') jobType: string,
     @Body('payload') payload: any,
-    @CurrentUser() user: RequestUser,
+    @CurrentUser() user: AuthUser,
     @TenantId() tenantId: string,
   ) {
     return this.jobsService.enqueueJob(jobType, payload, user.id, tenantId);
@@ -66,7 +65,7 @@ export class JobsController {
    */
   @Get(':jobId')
   @ApiOperation({ summary: 'Get job status' })
-  async getJobStatus(@Param('jobId') jobId: string, @CurrentUser() user: RequestUser) {
+  async getJobStatus(@Param('jobId') jobId: string, @CurrentUser() user: AuthUser) {
     return this.jobsService.getJobStatus(jobId, user.id);
   }
 }

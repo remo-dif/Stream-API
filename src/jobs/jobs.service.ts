@@ -54,7 +54,7 @@ export class JobsService {
    */
   async getJobStatus(jobId: string, userId: string) {
     const job = await this.queueService.getJobStatus(jobId);
-    if (!job || job.userId !== userId) {
+    if (!job || job.data.userId !== userId) {
       throw new NotFoundException('Job not found');
     }
     return job;

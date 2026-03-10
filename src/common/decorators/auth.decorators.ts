@@ -1,7 +1,13 @@
 import { SetMetadata, createParamDecorator, ExecutionContext } from '@nestjs/common';
-import { UserRole } from '../../database/entities/user.entity';
 
-export const Roles = (...roles: UserRole[]) => SetMetadata('roles', roles);
+export interface AuthUser {
+  id: string;
+  email: string;
+  tenantId?: string;
+  user_metadata?: any;
+}
+
+export const Roles = (...roles: string[]) => SetMetadata('roles', roles);
 
 export const Public = () => SetMetadata('isPublic', true);
 
