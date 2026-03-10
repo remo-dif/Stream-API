@@ -5,6 +5,7 @@ import {
   UnauthorizedException,
   Logger,
 } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
 import { SupabaseService } from '../../supabase/supabase.service';
 
 /**
@@ -20,14 +21,25 @@ import { SupabaseService } from '../../supabase/supabase.service';
  *
  * After this guard runs, request.user is guaranteed to have:
  *  { id, email, role, tenantId, ...supabaseAuthFields }
+ *
+ * Routes decorated with @Public() bypass this guard entirely.
  */
 @Injectable()
 export class SupabaseAuthGuard implements CanActivate {
   private readonly logger = new Logger(SupabaseAuthGuard.name);
 
-  constructor(private supabaseService: SupabaseService) {}
+  constructor(
+    private supabaseService: SupabaseService,
+    private reflector: Reflector,
+  ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
+    const isPublic = this.reflector.getAllAndOverride<boolean>('isPublic', [
+      context.getHandler(),
+      context.getClass(),
+    ]);
+    if (isPublic) return true;
+
     const request = context.switchToHttp().getRequest();
     const authorization = request.headers.authorization;
 

@@ -11,6 +11,7 @@ import {
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { AuthService } from './auth.service';
 import { LoginDto, RefreshTokenDto, RegisterDto } from './dto/auth.dto';
+import { Public } from '../common/decorators/auth.decorators';
 
 @ApiTags('auth')
 @Controller('api/v1/auth')
@@ -18,12 +19,14 @@ export class AuthController {
   constructor(private authService: AuthService) {}
 
   @Post('signup')
+  @Public()
   @ApiOperation({ summary: 'Register a new user' })
   async signUp(@Body() dto: RegisterDto) {
     return this.authService.signUp(dto);
   }
 
   @Post('signin')
+  @Public()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Sign in with email and password' })
   async signIn(@Body() dto: LoginDto) {
@@ -48,6 +51,7 @@ export class AuthController {
   }
 
   @Post('refresh')
+  @Public()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Refresh access token' })
   async refresh(@Body() dto: RefreshTokenDto) {

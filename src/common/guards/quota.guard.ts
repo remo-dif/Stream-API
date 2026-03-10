@@ -5,6 +5,7 @@ import {
   HttpException,
   HttpStatus,
   Logger,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { SupabaseService } from '../../supabase/supabase.service';
 
@@ -19,9 +20,12 @@ export class QuotaGuard implements CanActivate {
     const user = request.user;
 
     // SupabaseAuthGuard must run first and enrich request.user with tenantId.
-    // If tenantId is missing the request is effectively unauthenticated.
+    // Fail closed: if the enriched profile is missing, deny access rather than
+    // silently bypassing quota enforcement.
     if (!user?.id || !user?.tenantId) {
-      return true; // Let SupabaseAuthGuard's own error surface
+      throw new UnauthorizedException(
+        'User profile not enriched. SupabaseAuthGuard must run before QuotaGuard.',
+      );
     }
 
     const tenantId: string = user.tenantId;

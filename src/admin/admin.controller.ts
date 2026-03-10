@@ -2,7 +2,7 @@ import { Controller, Get, Patch, Param, Body, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { SupabaseAuthGuard } from '../auth/guards/supabase-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
-import { Roles, TenantId } from '../common/decorators/auth.decorators';
+import { Roles, TenantId, CurrentUser, AuthUser } from '../common/decorators/auth.decorators';
 import { UserRole } from '../database/entities/user.entity';
 import { AdminService } from './admin.service';
 
@@ -63,8 +63,9 @@ export class AdminController {
     @Param('id') userId: string,
     @Body('role') role: UserRole,
     @TenantId() tenantId: string,
+    @CurrentUser() user: AuthUser,
   ) {
-    return this.adminService.updateRole(userId, tenantId, role);
+    return this.adminService.updateRole(userId, tenantId, role, user.role as UserRole);
   }
 
   /**

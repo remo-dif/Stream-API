@@ -23,8 +23,18 @@ export class AdminService {
     return { users: users || [] };
   }
 
-  async updateRole(userId: string, tenantId: string, role: UserRole) {
-    const validRoles = [UserRole.USER, UserRole.ADMIN];
+  async updateRole(
+    userId: string,
+    tenantId: string,
+    role: UserRole,
+    requesterRole: UserRole,
+  ) {
+    // SUPERADMIN can assign any role; ADMIN can only assign USER or ADMIN
+    const validRoles =
+      requesterRole === UserRole.SUPERADMIN
+        ? [UserRole.USER, UserRole.ADMIN, UserRole.SUPERADMIN]
+        : [UserRole.USER, UserRole.ADMIN];
+
     if (!validRoles.includes(role)) {
       throw new BadRequestException(`Role must be one of: ${validRoles.join(', ')}`);
     }

@@ -5,7 +5,7 @@
 /tmp
 
 #Claude
-.claude
+./claude
 
 # Logs
 logs

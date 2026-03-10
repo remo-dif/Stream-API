@@ -3,6 +3,7 @@ import { SetMetadata, createParamDecorator, ExecutionContext } from '@nestjs/com
 export interface AuthUser {
   id: string;
   email: string;
+  role?: string;
   tenantId?: string;
   user_metadata?: any;
 }

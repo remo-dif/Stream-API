@@ -5,6 +5,7 @@ import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { BullModule } from '@nestjs/bullmq';
 import { SupabaseModule } from './supabase/supabase.module';
 import { AuthModule } from './auth/auth.module';
+import { SupabaseAuthGuard } from './auth/guards/supabase-auth.guard';
 import { ChatModule } from './chat/chat.module';
 import { UsageModule } from './usage/usage.module';
 import { AdminModule } from './admin/admin.module';
@@ -62,6 +63,11 @@ import { validate } from './config/env.validation';
     {
       provide: APP_GUARD,
       useClass: ThrottlerGuard,
+    },
+    // Apply SupabaseAuthGuard globally — routes that should be public must use @Public()
+    {
+      provide: APP_GUARD,
+      useClass: SupabaseAuthGuard,
     },
   ],
 })

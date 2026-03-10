@@ -50,14 +50,22 @@ export class AuthService {
       });
 
     if (profileError) {
-      // Cleanup: delete the orphaned auth user so the email can be re-used
+      // Cleanup: delete the orphaned auth user so the email can be re-used.
+      // If cleanup itself fails we log a CRITICAL alert with the user ID so it
+      // can be purged manually — we still throw so the caller sees a failure.
       this.logger.error(
-        `Failed to create user_profiles for ${data.user.id}. Cleaning up auth user.`,
+        `Failed to create user_profiles for ${data.user.id}. Attempting auth user cleanup.`,
         profileError,
       );
-      await this.supabaseService
+      const { error: cleanupError } = await this.supabaseService
         .getAdminClient()
         .auth.admin.deleteUser(data.user.id);
+      if (cleanupError) {
+        this.logger.error(
+          `CRITICAL: Failed to delete orphaned auth user ${data.user.id}. Manual cleanup required.`,
+          cleanupError,
+        );
+      }
       throw new InternalServerErrorException(
         'Failed to complete registration. Please try again.',
       );
