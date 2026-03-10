@@ -1,6 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsEmail, IsEnum, IsOptional, IsString, IsUUID, MinLength } from 'class-validator';
-import { UserRole } from '../../database/entities/user.entity';
+import { IsEmail, IsString, IsUUID, MinLength } from 'class-validator';
 
 export class RegisterDto {
   @ApiProperty({ example: 'user@example.com' })
@@ -16,10 +15,9 @@ export class RegisterDto {
   @IsUUID()
   tenantId!: string;
 
-  @ApiProperty({ enum: UserRole, default: UserRole.USER, required: false })
-  @IsEnum(UserRole)
-  @IsOptional()
-  role?: UserRole;
+  // Role is intentionally excluded from the public signup endpoint.
+  // All users are created as 'user' by default.
+  // Admins can upgrade roles via PATCH /api/v1/admin/users/:id/role.
 }
 
 export class LoginDto {
@@ -52,7 +50,7 @@ export class AuthResponseDto {
   user!: {
     id: string;
     email: string;
-    role: UserRole;
+    role: string;
     tenantId: string;
     tenantName: string;
     plan: string;

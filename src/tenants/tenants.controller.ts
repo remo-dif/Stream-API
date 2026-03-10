@@ -5,6 +5,7 @@ import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles, TenantId } from '../common/decorators/auth.decorators';
 import { UserRole } from '../database/entities/user.entity';
 import { TenantsService } from './tenants.service';
+import { CreateTenantDto } from './dto/create-tenant.dto';
 
 /**
  * Tenants Controller
@@ -55,7 +56,7 @@ export class TenantsController {
   @Post()
   @UseGuards(RolesGuard)
   @Roles(UserRole.SUPERADMIN)
-  async createTenant(@Body() dto: any) {
+  async createTenant(@Body() dto: CreateTenantDto) {
     return this.tenantsService.createTenant(dto);
   }
 }

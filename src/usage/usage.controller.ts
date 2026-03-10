@@ -40,8 +40,8 @@ export class UsageController {
    */
   @Get('dashboard')
   @ApiOperation({ summary: 'Get usage dashboard data' })
-  async getDashboard(@TenantId() tenantId: string, @CurrentUser() user: AuthUser) {
-    return this.usageService.getDashboard(tenantId, user);
+  async getDashboard(@TenantId() tenantId: string) {
+    return this.usageService.getDashboard(tenantId);
   }
 
   /**

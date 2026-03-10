@@ -1,9 +1,10 @@
-import { Controller, Post, Get, Body, Param, UseGuards, Req } from '@nestjs/common';
+import { Controller, Post, Get, Body, Param, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { SupabaseAuthGuard } from '../auth/guards/supabase-auth.guard';
 import { QuotaGuard } from '../common/guards/quota.guard';
 import { CurrentUser, TenantId, AuthUser } from '../common/decorators/auth.decorators';
 import { JobsService } from './jobs.service';
+import { SubmitJobDto } from './dto/submit-job.dto';
 
 /**
  * Jobs Controller
@@ -44,12 +45,11 @@ export class JobsController {
   @Post('submit')
   @ApiOperation({ summary: 'Submit async AI job' })
   async submitJob(
-    @Body('jobType') jobType: string,
-    @Body('payload') payload: any,
+    @Body() dto: SubmitJobDto,
     @CurrentUser() user: AuthUser,
     @TenantId() tenantId: string,
   ) {
-    return this.jobsService.enqueueJob(jobType, payload, user.id, tenantId);
+    return this.jobsService.enqueueJob(dto.jobType, dto.payload, user.id, tenantId);
   }
 
   /**
