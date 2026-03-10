@@ -4,6 +4,9 @@
 /build
 /tmp
 
+#Claude
+.claude
+
 # Logs
 logs
 *.log
