@@ -3,7 +3,12 @@ import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { AdminService, UserRole } from './admin.service';
 import { SupabaseService } from '../supabase/supabase.service';
 
-function makeBuilder(result: { data?: any; error?: any } = {}) {
+interface MockBuilderResultType {
+  data?: any;
+  error?: any;
+} 
+
+function makeBuilder(result: MockBuilderResultType = {}) {
   const resolved = { data: result.data ?? null, error: result.error ?? null };
   const b: any = {
     select: jest.fn().mockReturnThis(),
