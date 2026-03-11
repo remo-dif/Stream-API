@@ -5,22 +5,26 @@ Production-grade multi-tenant AI chat platform built with NestJS, TypeScript, an
 ## Architecture
 
 ```
-[Angular Frontend] ──SSE──▶ [Nginx] ──▶ [NestJS API] ──▶ [PostgreSQL]
-                                              │
-                                         [Redis Cache]
-                                              │
-                                        [BullMQ Worker] ──▶ [Anthropic API]
+[Frontend] ──SSE──▶ [Nginx] ──▶ [NestJS API] ──▶ [PostgreSQL]
+                                      │
+                                 [Supabase Auth]
+                                      │
+                                 [Redis Cache]
+                                      │
+                                [BullMQ Worker] ──▶ [Anthropic API]
 ```
 
 ## Tech Stack
 
 - **Backend:** NestJS 10 + TypeScript 5
 - **ORM:** TypeORM with PostgreSQL entities
-- **Authentication:** Passport JWT + bcryptjs
+- **Authentication:** Supabase with JWT verification
+- **Database:** PostgreSQL (via Supabase)
 - **Queue:** BullMQ with Redis
 - **API Docs:** Swagger/OpenAPI
 - **Validation:** class-validator + class-transformer
 - **Streaming:** Server-Sent Events (SSE)
+- **AI Provider:** Anthropic API
 
 ## Project Structure
 
@@ -28,27 +32,59 @@ Production-grade multi-tenant AI chat platform built with NestJS, TypeScript, an
 src/
 ├── main.ts                      # Application entry point
 ├── app.module.ts                # Root module
-├── auth/                        # JWT authentication
+├── auth/                        # Supabase authentication
 │   ├── auth.controller.ts
 │   ├── auth.service.ts
-│   ├── jwt.strategy.ts
+│   ├── guards/
+│   │   └── supabase-auth.guard.ts
 │   └── dto/
+│       └── auth.dto.ts
 ├── chat/                        # AI conversations & streaming
 │   ├── chat.controller.ts
 │   ├── chat.service.ts
 │   ├── ai.service.ts            # Anthropic integration
 │   └── dto/
-├── usage/                       # Token usage dashboard
+│       └── chat.dto.ts
 ├── admin/                       # User management (RBAC)
-├── jobs/                        # Async job submission
+│   ├── admin.controller.ts
+│   ├── admin.service.ts
+│   └── admin.module.ts
+├── usage/                       # Token usage tracking
+│   ├── usage.controller.ts
+│   ├── usage.service.ts
+│   └── usage.module.ts
 ├── tenants/                     # Multi-tenancy
-├── queue/                       # BullMQ worker processor
+│   ├── tenants.controller.ts
+│   ├── tenants.service.ts
+│   ├── tenants.module.ts
+│   └── dto/
+│       └── create-tenant.dto.ts
+├── jobs/                        # Async job submission
+│   ├── jobs.controller.ts
+│   ├── jobs.service.ts
+│   ├── jobs.module.ts
+│   └── dto/
+│       └── submit-job.dto.ts
+├── queue/                       # BullMQ job processing
+│   ├── ai-job.processor.ts      # Job processor
+│   ├── queue.module.ts
+│   └── queue.service.ts
+├── supabase/                    # Supabase integration
+│   ├── supabase.module.ts
+│   └── supabase.service.ts
 ├── common/
-│   ├── guards/                  # JWT, Roles, Quota guards
-│   ├── decorators/              # @CurrentUser, @Roles, @TenantId
-│   └── filters/                 # Error handling
+│   ├── guards/                  # Auth, Quota, Roles guards
+│   ├── decorators/              # @AuthUser, @Roles, @TenantId
+│   ├── filters/                 # Error handling
+│   └── interceptors/
+├── config/
+│   └── env.validation.ts        # Environment validation
 └── database/
     ├── entities/                # TypeORM entities
+    │   ├── user.entity.ts
+    │   ├── tenant.entity.ts
+    │   ├── conversation.entity.ts
+    │   └── usage-log.entity.ts
     └── schema.sql               # PostgreSQL schema
 ```
 
@@ -60,14 +96,18 @@ npm install
 
 # Copy environment variables
 cp .env.example .env
-# Fill in ANTHROPIC_API_KEY, JWT_SECRET, etc.
+# Fill in:
+#   - SUPABASE_URL, SUPABASE_KEY
+#   - ANTHROPIC_API_KEY
+#   - REDIS_URL, DATABASE_URL
+#   - JWT_SECRET (for internal signing)
 
 # Start with Docker Compose
 cd infrastructure/docker
 docker-compose up -d
 
 # Run migrations
-docker-compose exec postgres psql -U postgres -d ai_saas -f /schema.sql
+npm run migrate
 
 # Development mode
 npm run start:dev
@@ -88,15 +128,18 @@ Once running, visit: http://localhost:3000/api/docs
 | Type Safety | Full TypeScript with strict mode |
 | Dependency Injection | NestJS IoC container |
 | Validation | class-validator DTOs on all routes |
+| Authentication | Supabase JWT guard with @SupabaseAuthGuard |
 | RBAC | @Roles decorator + RolesGuard |
-| Multi-Tenancy | tenant_id isolation via TypeORM |
+| Multi-Tenancy | tenant_id isolation via TypeORM entities |
 | AI Streaming | Anthropic SDK → SSE via NestJS |
-| Token Tracking | TypeORM + Redis counters |
-| Retry Logic | Exponential backoff (3 attempts) |
-| Rate Limiting | @nestjs/throttler + Redis |
-| Background Jobs | BullMQ with @Processor decorator |
-| API Docs | Swagger with @ApiTags, @ApiOperation |
-| Guards | SupabaseAuthGuard, RolesGuard, QuotaGuard |
+| Token Tracking | TypeORM + Redis counters in UsageService |
+| Quota Management | QuotaGuard enforces usage limits |
+| Background Jobs | BullMQ with AI job processor |
+| Job Monitoring | JobsService with status tracking |
+| Admin Tools | AdminService for user management |
+| API Documentation | Swagger with @ApiTags, @ApiOperation |
+| Database | PostgreSQL with TypeORM entity mapping |
+| Queue System | Redis + BullMQ for async processing |
 
 ## Environment Variables
 
