@@ -7,17 +7,14 @@ services:
       dockerfile: infrastructure/docker/Dockerfile
     ports:
       - "3000:3000"
+    env_file:
+      - ../../.env
     environment:
       - NODE_ENV=production
       - PORT=3000
-      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS}
-      - SUPABASE_URL=${SUPABASE_URL}
-      - SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
-      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
       - REDIS_URL=redis://redis:6379
       - REDIS_HOST=redis
       - REDIS_PORT=6379
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
     depends_on:
       postgres:
         condition: service_healthy
@@ -29,27 +26,6 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-
-  worker:
-    build:
-      context: ../..
-      dockerfile: infrastructure/docker/Dockerfile
-    command: node dist/queue/worker.js
-    environment:
-      - NODE_ENV=production
-      - SUPABASE_URL=${SUPABASE_URL}
-      - SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
-      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
-      - REDIS_URL=redis://redis:6379
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
-    depends_on:
-      - postgres
-      - redis
-    restart: unless-stopped
-    deploy:
-      replicas: 2
 
   postgres:
     image: postgres:16-alpine
@@ -70,7 +46,7 @@ services:
 
   redis:
     image: redis:7-alpine
-    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy noeviction
     volumes:
       - redis_data:/data
     ports:
