@@ -19,6 +19,7 @@ import {
   ApiQuery,
 } from '@nestjs/swagger';
 import { SupabaseAuthGuard } from '../auth/guards/supabase-auth.guard';
+import { QuotaGuard } from '../common/guards/quota.guard';
 import { ChatService } from './chat.service';
 import { AIService } from './ai.service';
 import { CreateConversationDto, SendMessageDto } from './dto/chat.dto';
@@ -87,17 +88,21 @@ export class ChatController {
    * SSE streaming endpoint.
    *
    * Flow:
-   *  1. Verify conversation ownership (throws NotFoundException before writing headers)
+   *  1. Verify conversation ownership (throws before writing headers)
    *  2. Save the user's message
-   *  3. Open SSE stream, forward each text delta to the client
+   *  3. Open SSE stream, iterate with for-await to correctly consume all events
    *  4. On client disconnect, abort the Anthropic stream immediately
    *  5. On completion, persist the assistant message + log usage atomically
    *
-   * Error handling:
-   *  - Errors BEFORE res.flushHeaders() propagate to NestJS exception filters normally.
-   *  - Errors AFTER headers are sent are written as SSE error events then the stream ends.
+   * FIX: The original code registered stream.on('text') and then called
+   * await stream.finalMessage() concurrently. finalMessage() internally
+   * drains the stream, so text events emitted after that point were lost,
+   * causing truncated responses. The correct pattern is to iterate the stream
+   * with `for await` which processes every event in order, and only read
+   * finalMessage() after the loop has fully completed.
    */
   @Post('conversations/:id/messages')
+  @UseGuards(QuotaGuard)
   @ApiOperation({ summary: 'Send a message and stream the AI response (SSE)' })
   async sendMessage(
     @CurrentUser() user: AuthUser,
@@ -114,10 +119,7 @@ export class ChatController {
     );
 
     // Step 2: Build context from conversation history
-    const history = await this.chatService.getContextMessages(
-      conversationId,
-      20,
-    );
+    const history = await this.chatService.getContextMessages(conversationId, 20);
     const messages = [...history, { role: 'user' as const, content: dto.content }];
 
     // Step 3: Persist user message before opening the stream
@@ -129,11 +131,11 @@ export class ChatController {
       model: dto.model ?? conversation.model,
     });
 
-    // Step 5: Write SSE headers — from this point all errors go as SSE events
+    // Step 5: Write SSE headers — from this point errors become SSE events
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache, no-transform');
     res.setHeader('Connection', 'keep-alive');
-    res.setHeader('X-Accel-Buffering', 'no'); // disable Nginx response buffering
+    res.setHeader('X-Accel-Buffering', 'no');
     res.flushHeaders();
 
     let assistantContent = '';
@@ -143,9 +145,7 @@ export class ChatController {
     const end = (err?: Error) => {
       if (res.writableEnded) return;
       if (err) {
-        res.write(
-          `event: error\ndata: ${JSON.stringify({ error: err.message })}\n\n`,
-        );
+        res.write(`event: error\ndata: ${JSON.stringify({ error: err.message })}\n\n`);
       }
       res.write('event: done\ndata: [DONE]\n\n');
       res.end();
@@ -153,20 +153,27 @@ export class ChatController {
 
     // Abort the upstream stream immediately when the client disconnects
     res.on('close', () => {
-      if (!stream.ended) {
-        stream.abort();
-      }
+      if (!stream.ended) stream.abort();
     });
 
     try {
-      stream.on('text', (text: string) => {
-        assistantContent += text;
-        if (!res.writableEnded) {
-          res.write(`data: ${JSON.stringify({ text })}\n\n`);
+      // FIX: Use for-await to iterate stream events in order.
+      // This guarantees every text chunk is processed before we read usage,
+      // eliminating the race where finalMessage() drained the stream early.
+      for await (const event of stream) {
+        if (
+          event.type === 'content_block_delta' &&
+          event.delta.type === 'text_delta'
+        ) {
+          const text = event.delta.text;
+          assistantContent += text;
+          if (!res.writableEnded) {
+            res.write(`data: ${JSON.stringify({ text })}\n\n`);
+          }
         }
-      });
+      }
 
-      // Capture final usage from the complete message event
+      // Safe to read finalMessage() now — the async iterator has fully consumed the stream
       const finalMessage = await stream.finalMessage();
       inputTokens = finalMessage.usage.input_tokens;
       outputTokens = finalMessage.usage.output_tokens;

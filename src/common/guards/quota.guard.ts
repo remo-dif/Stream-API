@@ -9,6 +9,21 @@ import {
 } from '@nestjs/common';
 import { SupabaseService } from '../../supabase/supabase.service';
 
+/**
+ * QuotaGuard
+ *
+ * FIX: This guard previously performed a read-then-check in application code,
+ * creating a race condition where concurrent requests could both pass the quota
+ * check before either had incremented the counter — together exceeding the limit.
+ *
+ * The token quota is now enforced atomically inside the increment_tenant_tokens()
+ * Postgres function (see src/database/schema.sql), which uses SELECT FOR UPDATE
+ * to lock the tenant row, check the quota, and increment in a single transaction.
+ *
+ * This guard now only checks tenant.is_active — a flag that doesn't need
+ * atomicity — and attaches the tenant to the request for downstream services.
+ * The actual token enforcement happens in AIService.logUsage() via the RPC.
+ */
 @Injectable()
 export class QuotaGuard implements CanActivate {
   private readonly logger = new Logger(QuotaGuard.name);
@@ -19,9 +34,6 @@ export class QuotaGuard implements CanActivate {
     const request = context.switchToHttp().getRequest();
     const user = request.user;
 
-    // SupabaseAuthGuard must run first and enrich request.user with tenantId.
-    // Fail closed: if the enriched profile is missing, deny access rather than
-    // silently bypassing quota enforcement.
     if (!user?.id || !user?.tenantId) {
       throw new UnauthorizedException(
         'User profile not enriched. SupabaseAuthGuard must run before QuotaGuard.',
@@ -33,16 +45,12 @@ export class QuotaGuard implements CanActivate {
     const { data: tenant, error } = await this.supabaseService
       .getAdminClient()
       .from('tenants')
-      .select('token_quota, tokens_used, is_active')
+      .select('is_active, token_quota, tokens_used')
       .eq('id', tenantId)
       .single();
 
     if (error) {
-      // DB failure → log, do NOT silently pass (could allow unlimited usage)
-      this.logger.error(
-        `QuotaGuard: failed to fetch tenant ${tenantId}`,
-        error,
-      );
+      this.logger.error(`QuotaGuard: failed to fetch tenant ${tenantId}`, error);
       throw new HttpException(
         'Service temporarily unavailable. Please try again.',
         HttpStatus.SERVICE_UNAVAILABLE,
@@ -60,19 +68,9 @@ export class QuotaGuard implements CanActivate {
       );
     }
 
-    if (tenant.token_quota > 0 && tenant.tokens_used >= tenant.token_quota) {
-      throw new HttpException(
-        {
-          error: 'Token quota exceeded for this billing period',
-          code: 'QUOTA_EXCEEDED',
-          quota: tenant.token_quota,
-          used: tenant.tokens_used,
-        },
-        HttpStatus.TOO_MANY_REQUESTS,
-      );
-    }
-
-    // Attach tenant to request so downstream services can avoid a re-fetch
+    // Attach tenant to request so downstream services can read quota info
+    // without an extra DB round-trip (e.g. for UI display purposes).
+    // NOTE: This is a snapshot — the authoritative quota check is in the DB RPC.
     request.tenant = tenant;
     return true;
   }

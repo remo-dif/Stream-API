@@ -1,9 +1,15 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { Injectable, Logger, RequestTimeoutException } from "@nestjs/common";
+import {
+  Injectable,
+  Logger,
+  RequestTimeoutException,
+  HttpException,
+  HttpStatus,
+} from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { SupabaseService } from "../supabase/supabase.service";
 
-const AI_TIMEOUT_MS = 60_000; // 60 s hard ceiling on any AI call
+const AI_TIMEOUT_MS = 60_000;
 const DEFAULT_MODEL = "claude-3-5-sonnet-20241022";
 
 export type ChatMessage = { role: "user" | "assistant"; content: string };
@@ -33,6 +39,8 @@ export class AIService {
     return this.anthropic.messages.stream({
       model: options.model ?? DEFAULT_MODEL,
       max_tokens: 4096,
+      system:
+        "You are a helpful AI assistant. Be concise, accurate, and professional.",
       messages: options.messages,
     });
   }
@@ -40,7 +48,6 @@ export class AIService {
   /**
    * Non-streaming completion for background job processors.
    * Includes a hard timeout so jobs never hang indefinitely.
-   * Returns the full text plus usage stats for logging.
    */
   async createCompletion(options: {
     messages: ChatMessage[];
@@ -54,6 +61,8 @@ export class AIService {
         {
           model: options.model ?? DEFAULT_MODEL,
           max_tokens: 4096,
+          system:
+            "You are a helpful AI assistant. Be concise, accurate, and professional.",
           messages: options.messages,
         },
         { signal: controller.signal as any },
@@ -82,8 +91,14 @@ export class AIService {
   }
 
   /**
-   * Persists token usage and increments the tenant's running quota counter.
-   * Errors are logged but never thrown — usage logging must never break the chat flow.
+   * Persists token usage and atomically increments the tenant quota counter.
+   *
+   * FIX: The RPC now raises a Postgres exception if the quota would be exceeded.
+   * We detect and re-throw it as a proper HTTP 429 so the SSE error event
+   * contains a meaningful code the frontend can act on.
+   *
+   * Non-quota errors are still swallowed (logged only) so usage logging
+   * never breaks the chat flow for transient DB issues.
    */
   async logUsage(data: {
     userId: string;
@@ -109,8 +124,8 @@ export class AIService {
             model: data.model ?? DEFAULT_MODEL,
           }),
 
-        // Atomically increment tokens_used on the tenant row.
-        // This is what QuotaGuard reads to enforce limits.
+        // FIX: RPC now enforces quota atomically.
+        // If quota is exceeded it raises QUOTA_EXCEEDED — we rethrow as 429.
         this.supabaseService.getAdminClient().rpc("increment_tenant_tokens", {
           p_tenant_id: data.tenantId,
           p_tokens: data.totalTokens,
@@ -120,13 +135,25 @@ export class AIService {
       if (logResult.error) {
         this.logger.error("Failed to insert usage_log", logResult.error);
       }
+
       if (quotaResult.error) {
+        const msg: string = quotaResult.error.message ?? "";
+        if (msg.includes("QUOTA_EXCEEDED")) {
+          throw new HttpException(
+            {
+              error: "Token quota exceeded for this billing period",
+              code: "QUOTA_EXCEEDED",
+            },
+            HttpStatus.TOO_MANY_REQUESTS,
+          );
+        }
         this.logger.error(
           "Failed to increment tenant tokens_used",
           quotaResult.error,
         );
       }
     } catch (err) {
+      if (err instanceof HttpException) throw err;
       this.logger.error("logUsage threw unexpectedly", err);
     }
   }

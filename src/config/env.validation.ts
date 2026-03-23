@@ -51,7 +51,7 @@ class EnvironmentVariables {
 
   @IsString()
   @IsOptional()
-  ALLOWED_ORIGINS: string = 'http://localhost:4200';
+  ALLOWED_ORIGINS: string = 'http://localhost:3001';
 }
 
 export function validate(config: Record<string, unknown>) {

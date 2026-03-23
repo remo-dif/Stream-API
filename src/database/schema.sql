@@ -119,20 +119,67 @@ CREATE INDEX IF NOT EXISTS idx_jobs_status ON async_jobs(status);
 -- Functions
 -- ============================================================
 
--- Atomically increment a tenant's tokens_used counter.
--- Called by AIService.logUsage() after every AI completion.
+-- FIX: Atomic increment + quota enforcement in a single DB operation.
+--
+-- The original increment_tenant_tokens() only incremented tokens_used and
+-- returned void. The quota check lived in application code (QuotaGuard),
+-- creating a race condition: two concurrent requests could both pass the
+-- guard before either incremented the counter, together exceeding the quota.
+--
+-- This replacement:
+--   1. Increments tokens_used atomically (single UPDATE with a lock).
+--   2. Checks quota inside the same transaction — if the new total would
+--      exceed token_quota, it raises an exception instead of updating.
+--   3. Returns a status so the caller can distinguish quota-exceeded from
+--      success without a second round-trip.
+--
+-- QuotaGuard now only checks tenant.is_active (a fast read that doesn't need
+-- atomicity). The quota enforcement is fully delegated to this function.
 CREATE OR REPLACE FUNCTION increment_tenant_tokens(
   p_tenant_id UUID,
   p_tokens    INTEGER
 )
-RETURNS void
-LANGUAGE sql
+RETURNS jsonb
+LANGUAGE plpgsql
 SECURITY DEFINER
 AS $$
+DECLARE
+  v_quota      BIGINT;
+  v_used       BIGINT;
+  v_is_active  BOOLEAN;
+BEGIN
+  -- Lock the tenant row for the duration of this transaction
+  SELECT token_quota, tokens_used, is_active
+  INTO   v_quota, v_used, v_is_active
+  FROM   tenants
+  WHERE  id = p_tenant_id
+  FOR UPDATE;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'TENANT_NOT_FOUND' USING HINT = p_tenant_id::text;
+  END IF;
+
+  IF NOT v_is_active THEN
+    RAISE EXCEPTION 'TENANT_SUSPENDED' USING HINT = p_tenant_id::text;
+  END IF;
+
+  -- token_quota = 0 means unlimited
+  IF v_quota > 0 AND (v_used + p_tokens) > v_quota THEN
+    RAISE EXCEPTION 'QUOTA_EXCEEDED'
+      USING HINT = json_build_object(
+        'quota', v_quota,
+        'used',  v_used,
+        'requested', p_tokens
+      )::text;
+  END IF;
+
   UPDATE tenants
   SET    tokens_used = tokens_used + p_tokens,
          updated_at  = NOW()
   WHERE  id = p_tenant_id;
+
+  RETURN json_build_object('ok', true, 'tokens_used', v_used + p_tokens);
+END;
 $$;
 
 -- Aggregate usage stats for a tenant over a time window.

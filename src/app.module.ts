@@ -1,6 +1,6 @@
 import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
-import { ConfigModule } from '@nestjs/config';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { BullModule } from '@nestjs/bullmq';
 import { SupabaseModule } from './supabase/supabase.module';
@@ -24,28 +24,24 @@ import { validate } from './config/env.validation';
     }),
 
     // Rate limiting — 100 req/min short window, 1000 req/hour long window
-    // ThrottlerGuard is applied globally via APP_GUARD below.
     // TODO for multi-instance: swap default in-memory store for
     // ThrottlerStorageRedis (@nestjs/throttler + ioredis) so limits are shared.
     ThrottlerModule.forRoot([
-      {
-        name: 'short',
-        ttl: 60_000,   // 1 minute
-        limit: 100,
-      },
-      {
-        name: 'long',
-        ttl: 3_600_000, // 1 hour
-        limit: 1_000,
-      },
+      { name: 'short', ttl: 60_000,     limit: 100   },
+      { name: 'long',  ttl: 3_600_000,  limit: 1_000 },
     ]),
 
-    // BullMQ — reads REDIS_HOST / REDIS_PORT from validated env
-    BullModule.forRoot({
-      connection: {
-        host: process.env.REDIS_HOST ?? 'localhost',
-        port: parseInt(process.env.REDIS_PORT ?? '6379', 10),
-      },
+    // FIX: BullMQ now uses ConfigService so it respects the validated env schema
+    // instead of reading process.env directly and silently using defaults.
+    BullModule.forRootAsync({
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => ({
+        connection: {
+          host: config.get<string>('REDIS_HOST', 'localhost'),
+          port: config.get<number>('REDIS_PORT', 6379),
+        },
+      }),
     }),
 
     // Feature modules
@@ -59,16 +55,10 @@ import { validate } from './config/env.validation';
     QueueModule,
   ],
   providers: [
-    // Apply ThrottlerGuard to every route globally
-    {
-      provide: APP_GUARD,
-      useClass: ThrottlerGuard,
-    },
+    // Apply ThrottlerGuard globally
+    { provide: APP_GUARD, useClass: ThrottlerGuard },
     // Apply SupabaseAuthGuard globally — routes that should be public must use @Public()
-    {
-      provide: APP_GUARD,
-      useClass: SupabaseAuthGuard,
-    },
+    { provide: APP_GUARD, useClass: SupabaseAuthGuard },
   ],
 })
 export class AppModule {}
