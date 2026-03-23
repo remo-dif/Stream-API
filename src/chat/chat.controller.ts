@@ -1,33 +1,31 @@
 import {
-  Controller,
-  Post,
-  Get,
-  UseGuards,
-  Param,
   Body,
+  Controller,
+  Get,
+  Logger,
+  Param,
+  Post,
   Query,
   Res,
-  HttpCode,
-  HttpStatus,
-  Logger,
+  UseGuards
 } from '@nestjs/common';
-import { Response } from 'express';
 import {
-  ApiTags,
   ApiBearerAuth,
   ApiOperation,
   ApiQuery,
+  ApiTags,
 } from '@nestjs/swagger';
+import { Response } from 'express';
 import { SupabaseAuthGuard } from '../auth/guards/supabase-auth.guard';
-import { QuotaGuard } from '../common/guards/quota.guard';
-import { ChatService } from './chat.service';
-import { AIService } from './ai.service';
-import { CreateConversationDto, SendMessageDto } from './dto/chat.dto';
 import {
+  AuthUser,
   CurrentUser,
   TenantId,
-  AuthUser,
 } from '../common/decorators/auth.decorators';
+import { QuotaGuard } from '../common/guards/quota.guard';
+import { AIService } from './ai.service';
+import { ChatService } from './chat.service';
+import { CreateConversationDto, SendMessageDto } from './dto/chat.dto';
 
 @ApiTags('chat')
 @Controller('api/v1/chat')
