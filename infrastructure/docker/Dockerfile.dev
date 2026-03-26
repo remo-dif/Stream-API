@@ -1,18 +1,22 @@
+# Base image with Node 20 on alpine Linux for a small lightweight container
 FROM node:20-alpine
 
+# Set working directory for all following commands
 WORKDIR /app
 
-# Copy package files
+# Copy package files and install dependencies first to keep cache validity longer
 COPY package*.json ./
-
-# Install dependencies
 RUN npm ci
 
-# Copy source code
-COPY . .
+# Don't COPY . . — the volume mount handles source code in dev
+# This keeps container lightweight and uses local code for live reload behavior
 
-# Expose port
+# Enable polling file watchers for environments where inotify doesn't work well
+ENV CHOKIDAR_USEPOLLING=true
+ENV WATCHPACK_POLLING=true
+
+# Port used by NestJS development server
 EXPOSE 3000
 
-# Start in development mode with hot reloading
+# Start in watch mode
 CMD ["npm", "run", "start:dev"]
