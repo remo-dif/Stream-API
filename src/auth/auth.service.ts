@@ -117,6 +117,7 @@ export class AuthService {
    * This is the method called by GET /api/v1/auth/user
    */
   async getUser(userId: string) {
+    // Fetch the user's profile data
     const { data: profile, error: profileError } = await this.supabaseService
       .getAdminClient()
       .from("profiles")

@@ -27,3 +27,7 @@ lerna-debug.log*
 # temp directory
 .temp
 .tmp
+
+# IDE specific
+.idea
+.vscode

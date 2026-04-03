@@ -93,7 +93,7 @@ export class AIService {
   /**
    * Persists token usage and atomically increments the tenant quota counter.
    *
-   * FIX: The RPC now raises a Postgres exception if the quota would be exceeded.
+   * The RPC now raises a Postgres exception if the quota would be exceeded.
    * We detect and re-throw it as a proper HTTP 429 so the SSE error event
    * contains a meaningful code the frontend can act on.
    *
