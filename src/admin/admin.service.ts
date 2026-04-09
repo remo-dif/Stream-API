@@ -14,7 +14,7 @@ export class AdminService {
   async listUsers(tenantId: string) {
     const { data: users, error } = await this.supabaseService
       .getAdminClient()
-      .from('profiles')
+      .from('user_profiles')
       .select('*')
       .eq('tenant_id', tenantId)
       .order('created_at', { ascending: false });
@@ -41,7 +41,7 @@ export class AdminService {
 
     const { data, error } = await this.supabaseService
       .getAdminClient()
-      .from('profiles')
+      .from('user_profiles')
       .update({ role })
       .eq('id', userId)
       .eq('tenant_id', tenantId)
@@ -58,7 +58,7 @@ export class AdminService {
   async updateStatus(userId: string, tenantId: string, isActive: boolean) {
     const { data, error } = await this.supabaseService
       .getAdminClient()
-      .from('profiles')
+      .from('user_profiles')
       .update({ is_active: isActive })
       .eq('id', userId)
       .eq('tenant_id', tenantId)

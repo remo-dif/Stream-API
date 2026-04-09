@@ -11,7 +11,7 @@ import {
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { AuthService } from './auth.service';
 import { LoginDto, RefreshTokenDto, RegisterDto } from './dto/auth.dto';
-import { Public } from '../common/decorators/auth.decorators';
+import { CurrentUser, Public } from '../common/decorators/auth.decorators';
 
 @ApiTags('auth')
 @Controller('api/v1/auth')
@@ -45,9 +45,8 @@ export class AuthController {
   @Get('user')
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Get current authenticated user' })
-  async getUser(@Headers('authorization') authorization: string) {
-    const token = this.extractToken(authorization);
-    return this.authService.getUser(token);
+  async getUser(@CurrentUser('id') userId: string) {
+    return this.authService.getUser(userId);
   }
 
   @Post('refresh')

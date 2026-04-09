@@ -1,16 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { ConfigService } from '@nestjs/config';
 import { UsageService } from './usage.service';
 import { SupabaseService } from '../supabase/supabase.service';
-
-// Mock ioredis
-jest.mock('ioredis', () => {
-  return jest.fn().mockImplementation(() => ({
-    get: jest.fn().mockResolvedValue(null),
-  }));
-});
-
-import Redis from 'ioredis';
 
 function makeSingleBuilder(result: { data?: any; error?: any }) {
   return {
@@ -36,10 +26,25 @@ function makeLogsBuilder(result: { data?: any; error?: any; count?: number | nul
   return b;
 }
 
+function setDashboardRpcResponses(
+  adminClient: any,
+  summaryData: any = [{
+    total_tokens: 300_000,
+    input_tokens: 200_000,
+    output_tokens: 100_000,
+    request_count: 42,
+  }],
+  todayData: any = [{ total_tokens: 1234 }],
+) {
+  adminClient.rpc.mockReset();
+  adminClient.rpc
+    .mockResolvedValueOnce({ data: summaryData, error: null })
+    .mockResolvedValueOnce({ data: todayData, error: null });
+}
+
 describe('UsageService', () => {
   let service: UsageService;
   let adminClient: any;
-  let mockRedis: any;
 
   const TENANT = { token_quota: 1_000_000, tokens_used: 250_000, plan: 'starter' };
   const SUMMARY = [{
@@ -52,7 +57,7 @@ describe('UsageService', () => {
   beforeEach(async () => {
     adminClient = {
       from: jest.fn(),
-      rpc: jest.fn().mockResolvedValue({ data: SUMMARY, error: null }),
+      rpc: jest.fn(),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -62,15 +67,11 @@ describe('UsageService', () => {
           provide: SupabaseService,
           useValue: { getAdminClient: jest.fn().mockReturnValue(adminClient) },
         },
-        {
-          provide: ConfigService,
-          useValue: { get: jest.fn().mockReturnValue('redis://localhost:6379') },
-        },
       ],
     }).compile();
 
     service = module.get<UsageService>(UsageService);
-    mockRedis = (Redis as unknown as jest.Mock).mock.results[0]?.value;
+    setDashboardRpcResponses(adminClient);
   });
 
   // ── getDashboard ─────────────────────────────────────────────────────────────
@@ -87,6 +88,7 @@ describe('UsageService', () => {
 
     it('returns correct quota percentage', async () => {
       adminClient.from.mockReturnValue(makeSingleBuilder({ data: TENANT }));
+      setDashboardRpcResponses(adminClient);
 
       const result = await service.getDashboard('tenant-1');
       expect(result.quota).toEqual({
@@ -98,6 +100,7 @@ describe('UsageService', () => {
 
     it('returns last 30 days stats from RPC', async () => {
       adminClient.from.mockReturnValue(makeSingleBuilder({ data: TENANT }));
+      setDashboardRpcResponses(adminClient);
 
       const result = await service.getDashboard('tenant-1');
       expect(result.last30Days).toEqual({
@@ -108,17 +111,17 @@ describe('UsageService', () => {
       });
     });
 
-    it('returns today token count from Redis', async () => {
+    it('returns today token count from the database summary', async () => {
       adminClient.from.mockReturnValue(makeSingleBuilder({ data: TENANT }));
-      mockRedis.get.mockResolvedValue('1234');
+      setDashboardRpcResponses(adminClient);
 
       const result = await service.getDashboard('tenant-1');
       expect(result.today.tokens).toBe(1234);
     });
 
-    it('degrades today tokens to 0 when Redis is unavailable', async () => {
+    it('degrades today tokens to 0 when the summary RPC returns no rows', async () => {
       adminClient.from.mockReturnValue(makeSingleBuilder({ data: TENANT }));
-      mockRedis.get.mockRejectedValue(new Error('ECONNREFUSED'));
+      setDashboardRpcResponses(adminClient, SUMMARY, []);
 
       const result = await service.getDashboard('tenant-1');
       expect(result.today.tokens).toBe(0);
@@ -128,6 +131,7 @@ describe('UsageService', () => {
       adminClient.from.mockReturnValue(
         makeSingleBuilder({ data: { ...TENANT, tokens_used: 2_000_000 } }),
       );
+      setDashboardRpcResponses(adminClient);
 
       const result = await service.getDashboard('tenant-1');
       expect(result.quota.percentage).toBe(100);
@@ -137,6 +141,7 @@ describe('UsageService', () => {
       adminClient.from.mockReturnValue(
         makeSingleBuilder({ data: { ...TENANT, token_quota: 0 } }),
       );
+      setDashboardRpcResponses(adminClient);
 
       const result = await service.getDashboard('tenant-1');
       expect(result.quota.percentage).toBe(0);
@@ -144,7 +149,7 @@ describe('UsageService', () => {
 
     it('returns zeroed last30Days when RPC returns no rows', async () => {
       adminClient.from.mockReturnValue(makeSingleBuilder({ data: TENANT }));
-      adminClient.rpc.mockResolvedValue({ data: [], error: null });
+      setDashboardRpcResponses(adminClient, [], [{ total_tokens: 1234 }]);
 
       const result = await service.getDashboard('tenant-1');
       expect(result.last30Days).toEqual({

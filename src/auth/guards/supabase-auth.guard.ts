@@ -65,7 +65,7 @@ export class SupabaseAuthGuard implements CanActivate {
       // Step 2: Fetch app-level profile (role, tenant) from user_profiles
       const { data: profile, error: profileError } = await this.supabaseService
         .getAdminClient()
-        .from('profiles')
+        .from('user_profiles')
         .select('role, tenant_id, is_active')
         .eq('id', data.user.id)
         .single();

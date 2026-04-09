@@ -66,6 +66,7 @@ describe('AIService', () => {
       expect(mockAnthropic.messages.stream).toHaveBeenCalledWith({
         model: 'claude-3-5-sonnet-20241022',
         max_tokens: 4096,
+        system: 'You are a helpful AI assistant. Be concise, accurate, and professional.',
         messages,
       });
     });

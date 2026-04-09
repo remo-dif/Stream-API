@@ -18,6 +18,14 @@ function makeInsertBuilder(result: { data: any; error: any }) {
   return b;
 }
 
+function makeSelectBuilder(result: { data: any; error: any }) {
+  return {
+    select: jest.fn().mockReturnThis(),
+    eq: jest.fn().mockReturnThis(),
+    single: jest.fn().mockResolvedValue(result),
+  };
+}
+
 describe('AuthService', () => {
   let service: AuthService;
   let anonClient: any;
@@ -72,6 +80,13 @@ describe('AuthService', () => {
 
       const result = await service.signUp(dto);
       expect(result).toEqual({ user: { id: 'user-123', email: 'test@example.com' }, session: MOCK_SESSION });
+      expect(adminClient.from).toHaveBeenCalledWith('user_profiles');
+      expect(adminClient.from.mock.results[0]?.value.insert).toHaveBeenCalledWith({
+        id: MOCK_USER.id,
+        tenant_id: dto.tenantId,
+        email: dto.email,
+        role: 'user',
+      });
     });
 
     it('throws ConflictException when email already registered', async () => {
@@ -186,20 +201,21 @@ describe('AuthService', () => {
   // ── getUser ─────────────────────────────────────────────────────────────────
 
   describe('getUser', () => {
-    it('returns user from token', async () => {
-      adminClient.auth.getUser.mockResolvedValue({ data: { user: MOCK_USER }, error: null });
+    it('returns the current user profile by id', async () => {
+      const profile = { id: MOCK_USER.id, email: MOCK_USER.email, tenant_id: 'tenant-1' };
+      adminClient.from.mockReturnValue(makeSelectBuilder({ data: profile, error: null }));
 
-      const result = await service.getUser('valid-token');
-      expect(result).toEqual(MOCK_USER);
+      const result = await service.getUser(MOCK_USER.id);
+      expect(result).toEqual(profile);
+      expect(adminClient.from).toHaveBeenCalledWith('user_profiles');
     });
 
     it('throws UnauthorizedException on error', async () => {
-      adminClient.auth.getUser.mockResolvedValue({
-        data: { user: null },
-        error: { message: 'Expired' },
-      });
+      adminClient.from.mockReturnValue(
+        makeSelectBuilder({ data: null, error: { message: 'Row not found' } }),
+      );
 
-      await expect(service.getUser('expired-token')).rejects.toThrow(UnauthorizedException);
+      await expect(service.getUser(MOCK_USER.id)).rejects.toThrow(UnauthorizedException);
     });
   });
 

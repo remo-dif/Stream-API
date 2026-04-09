@@ -37,12 +37,12 @@ export class AuthService {
     // to ensure tenant_id is set if needed
     const { error: profileError } = await this.supabaseService
       .getAdminClient()
-      .from("profiles")
+      .from("user_profiles")
       .insert({
         id: data.user.id,
+        tenant_id: dto.tenantId,
         email: dto.email,
         role: "user",
-        // tenant_id: dto.tenantId, // Uncomment if you have tenant_id in profiles
       });
 
     if (profileError) {
@@ -120,7 +120,7 @@ export class AuthService {
     // Fetch the user's profile data
     const { data: profile, error: profileError } = await this.supabaseService
       .getAdminClient()
-      .from("profiles")
+      .from("user_profiles")
       .select("*")
       .eq("id", userId)
       .single();

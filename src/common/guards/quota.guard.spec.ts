@@ -94,7 +94,7 @@ describe('QuotaGuard', () => {
     }
   });
 
-  it('throws 429 with QUOTA_EXCEEDED code when quota is exhausted', async () => {
+  it('allows requests when tenant quota is exhausted because enforcement happens in the DB RPC', async () => {
     adminClient.from.mockReturnValue(
       makeTenantBuilder({
         data: { token_quota: 1_000, tokens_used: 1_000, is_active: true },
@@ -102,15 +102,8 @@ describe('QuotaGuard', () => {
       }),
     );
     const { ctx } = makeContext({ id: 'user-1', tenantId: 'tenant-1' });
-
-    try {
-      await guard.canActivate(ctx);
-      fail('Expected exception');
-    } catch (e: any) {
-      expect(e).toBeInstanceOf(HttpException);
-      expect(e.getStatus()).toBe(HttpStatus.TOO_MANY_REQUESTS);
-      expect(e.getResponse()).toMatchObject({ code: 'QUOTA_EXCEEDED' });
-    }
+    const result = await guard.canActivate(ctx);
+    expect(result).toBe(true);
   });
 
   it('allows requests when tokens_used is below quota', async () => {

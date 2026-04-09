@@ -1,22 +1,9 @@
-import { Injectable, Logger } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
+import { Injectable } from '@nestjs/common';
 import { SupabaseService } from '../supabase/supabase.service';
-import Redis from 'ioredis';
 
 @Injectable()
 export class UsageService {
-  private readonly logger = new Logger(UsageService.name);
-  private readonly redis: Redis;
-
-  constructor(
-    private readonly supabaseService: SupabaseService,
-    configService: ConfigService,
-  ) {
-    this.redis = new Redis(
-      configService.get<string>('REDIS_URL') ?? 'redis://localhost:6379',
-      { lazyConnect: true, enableReadyCheck: false },
-    );
-  }
+  constructor(private readonly supabaseService: SupabaseService) {}
 
   async getDashboard(tenantId: string) {
     if (!tenantId) {
@@ -28,7 +15,10 @@ export class UsageService {
     }
 
     // Fetch quota from the tenant row — never hardcode 1M
-    const [tenantResult, summaryResult] = await Promise.all([
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+
+    const [tenantResult, summaryResult, todayResult] = await Promise.all([
       this.supabaseService
         .getAdminClient()
         .from('tenants')
@@ -41,6 +31,11 @@ export class UsageService {
         p_tenant_id: tenantId,
         p_since: new Date(Date.now() - 30 * 86_400_000).toISOString(),
       }),
+
+      this.supabaseService.getAdminClient().rpc('get_usage_summary', {
+        p_tenant_id: tenantId,
+        p_since: todayStart.toISOString(),
+      }),
     ]);
 
     const tenant = tenantResult.data;
@@ -50,17 +45,9 @@ export class UsageService {
       output_tokens: 0,
       request_count: 0,
     };
-
-    // Today's count from Redis (fast path)
-    let todayTokens = 0;
-    try {
-      const today = new Date().toISOString().split('T')[0];
-      todayTokens = parseInt(
-        (await this.redis.get(`usage:${tenantId}:${today}`)) ?? '0',
-      );
-    } catch {
-      this.logger.warn('Redis unavailable; today token count degraded to 0');
-    }
+    const todaySummary = todayResult.data?.[0] ?? {
+      total_tokens: 0,
+    };
 
     const quota = tenant?.token_quota ?? 0;
     const used = tenant?.tokens_used ?? 0;
@@ -72,7 +59,7 @@ export class UsageService {
         used,
         percentage: quota > 0 ? Math.min(100, Math.round((used / quota) * 100)) : 0,
       },
-      today: { tokens: todayTokens },
+      today: { tokens: Number(todaySummary.total_tokens) },
       last30Days: {
         totalTokens: Number(summary.total_tokens),
         inputTokens: Number(summary.input_tokens),
