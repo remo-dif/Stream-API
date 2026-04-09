@@ -1,8 +1,8 @@
-import { Controller, Get, UseGuards, Query, Req } from '@nestjs/common';
+import { Controller, Get, UseGuards, Query } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { SupabaseAuthGuard } from '../auth/guards/supabase-auth.guard';
 import { UsageService } from './usage.service';
-import { TenantId, CurrentUser, AuthUser } from '../common/decorators/auth.decorators';
+import { TenantId } from '../common/decorators/auth.decorators';
 
 /**
  * Usage Controller
@@ -64,5 +64,14 @@ export class UsageController {
     @Query('limit') limit: number = 50,
   ) {
     return this.usageService.getLogs(tenantId, page, limit);
+  }
+
+  @Get('daily')
+  @ApiOperation({ summary: 'Get daily usage aggregates' })
+  async getDaily(
+    @TenantId() tenantId: string,
+    @Query('days') days: number = 30,
+  ) {
+    return this.usageService.getDailyUsage(tenantId, Number(days));
   }
 }

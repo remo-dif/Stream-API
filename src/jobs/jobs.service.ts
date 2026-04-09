@@ -59,4 +59,9 @@ export class JobsService {
     }
     return job;
   }
+
+  async listJobs(userId: string, limit: number = 20) {
+    const jobs = await this.queueService.listJobs(limit);
+    return jobs.filter((job) => job.data?.userId === userId);
+  }
 }

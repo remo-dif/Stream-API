@@ -1,8 +1,4 @@
-import {
-  Injectable,
-  NotFoundException,
-  ForbiddenException,
-} from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { SupabaseService } from '../supabase/supabase.service';
 
 @Injectable()
@@ -37,6 +33,44 @@ export class ChatService {
 
     if (error) throw error;
     return data;
+  }
+
+  async getConversation(conversationId: string, userId: string, tenantId: string) {
+    const { data, error } = await this.supabaseService
+      .getAdminClient()
+      .from('conversations')
+      .select('id, title, model, is_archived, created_at, updated_at')
+      .eq('id', conversationId)
+      .eq('user_id', userId)
+      .eq('tenant_id', tenantId)
+      .single();
+
+    if (error || !data) {
+      throw new NotFoundException('Conversation not found');
+    }
+
+    return data;
+  }
+
+  async archiveConversation(conversationId: string, userId: string, tenantId: string) {
+    const { data, error } = await this.supabaseService
+      .getAdminClient()
+      .from('conversations')
+      .update({
+        is_archived: true,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', conversationId)
+      .eq('user_id', userId)
+      .eq('tenant_id', tenantId)
+      .select('id')
+      .single();
+
+    if (error || !data) {
+      throw new NotFoundException('Conversation not found');
+    }
+
+    return { success: true };
   }
 
   /**

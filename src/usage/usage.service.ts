@@ -96,4 +96,46 @@ export class UsageService {
       totalPages: count ? Math.ceil(count / safeLimit) : 0,
     };
   }
+
+  async getDailyUsage(tenantId: string, days: number = 30) {
+    if (!tenantId) return [];
+
+    const safeDays = Math.min(Math.max(days, 1), 90);
+    const since = new Date();
+    since.setHours(0, 0, 0, 0);
+    since.setDate(since.getDate() - (safeDays - 1));
+
+    const { data, error } = await this.supabaseService
+      .getAdminClient()
+      .from('usage_logs')
+      .select('created_at, total_tokens')
+      .eq('tenant_id', tenantId)
+      .gte('created_at', since.toISOString())
+      .order('created_at', { ascending: true });
+
+    if (error) throw error;
+
+    const byDay = new Map<string, { tokens: number; requests: number }>();
+
+    for (let i = 0; i < safeDays; i += 1) {
+      const day = new Date(since);
+      day.setDate(since.getDate() + i);
+      const key = day.toISOString().split('T')[0];
+      byDay.set(key, { tokens: 0, requests: 0 });
+    }
+
+    for (const row of data ?? []) {
+      const key = new Date(row.created_at).toISOString().split('T')[0];
+      const current = byDay.get(key);
+      if (!current) continue;
+      current.tokens += Number(row.total_tokens ?? 0);
+      current.requests += 1;
+    }
+
+    return Array.from(byDay.entries()).map(([date, value]) => ({
+      date,
+      tokens: value.tokens,
+      requests: value.requests,
+    }));
+  }
 }

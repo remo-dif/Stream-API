@@ -1,4 +1,4 @@
-import { Controller, Post, Get, Body, Param, UseGuards } from '@nestjs/common';
+import { Controller, Post, Get, Body, Param, Query, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { SupabaseAuthGuard } from '../auth/guards/supabase-auth.guard';
 import { QuotaGuard } from '../common/guards/quota.guard';
@@ -67,5 +67,14 @@ export class JobsController {
   @ApiOperation({ summary: 'Get job status' })
   async getJobStatus(@Param('jobId') jobId: string, @CurrentUser() user: AuthUser) {
     return this.jobsService.getJobStatus(jobId, user.id);
+  }
+
+  @Get()
+  @ApiOperation({ summary: 'List recent jobs for the current user' })
+  async listJobs(
+    @CurrentUser() user: AuthUser,
+    @Query('limit') limit: number = 20,
+  ) {
+    return this.jobsService.listJobs(user.id, Number(limit));
   }
 }

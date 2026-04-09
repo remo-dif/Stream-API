@@ -56,10 +56,39 @@ export class QueueService {
 
     return {
       id: job.id,
+      name: job.name,
       status: await job.getState(),
       progress: job.progress,
       data: job.data,
       result: job.returnvalue,
     };
+  }
+
+  async listJobs(limit: number = 20) {
+    const safeLimit = Math.min(Math.max(limit, 1), 100);
+    const jobs = await this.aiQueue.getJobs(
+      ['waiting', 'active', 'completed', 'failed', 'delayed'],
+      0,
+      safeLimit - 1,
+      false,
+    );
+
+    const entries = await Promise.all(
+      jobs.map(async (job) => ({
+        id: job.id,
+        name: job.name,
+        status: await job.getState(),
+        progress: job.progress,
+        data: job.data,
+        result: job.returnvalue,
+        failedReason: job.failedReason,
+        attemptsMade: job.attemptsMade,
+        opts: job.opts,
+        timestamp: job.timestamp,
+        finishedOn: job.finishedOn,
+      })),
+    );
+
+    return entries.sort((a, b) => (b.timestamp ?? 0) - (a.timestamp ?? 0));
   }
 }

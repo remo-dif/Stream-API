@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Logger,
   Param,
@@ -62,6 +63,16 @@ export class ChatController {
     );
   }
 
+  @Get('conversations/:id')
+  @ApiOperation({ summary: 'Get a single conversation for the current user' })
+  async getConversation(
+    @CurrentUser() user: AuthUser,
+    @TenantId() tenantId: string,
+    @Param('id') conversationId: string,
+  ) {
+    return this.chatService.getConversation(conversationId, user.id, tenantId);
+  }
+
   @Get('conversations/:id/messages')
   @ApiOperation({ summary: 'Get paginated messages in a conversation' })
   @ApiQuery({ name: 'limit', required: false, type: Number })
@@ -80,6 +91,16 @@ export class ChatController {
       Number(limit),
       before,
     );
+  }
+
+  @Delete('conversations/:id')
+  @ApiOperation({ summary: 'Archive a conversation' })
+  async deleteConversation(
+    @CurrentUser() user: AuthUser,
+    @TenantId() tenantId: string,
+    @Param('id') conversationId: string,
+  ) {
+    return this.chatService.archiveConversation(conversationId, user.id, tenantId);
   }
 
   /**

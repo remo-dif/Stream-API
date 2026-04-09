@@ -8,6 +8,8 @@ import {
 import { SupabaseService } from "../supabase/supabase.service";
 import { RegisterDto } from "./dto/auth.dto";
 
+const DEFAULT_SIGNUP_TENANT_ID = "00000000-0000-0000-0000-000000000001";
+
 @Injectable()
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
@@ -40,7 +42,7 @@ export class AuthService {
       .from("user_profiles")
       .insert({
         id: data.user.id,
-        tenant_id: dto.tenantId,
+        tenant_id: dto.tenantId ?? DEFAULT_SIGNUP_TENANT_ID,
         email: dto.email,
         role: "user",
       });
