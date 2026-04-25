@@ -39,13 +39,17 @@ export class AuthService {
     // to ensure tenant_id is set if needed
     const { error: profileError } = await this.supabaseService
       .getAdminClient()
-      .from("user_profiles")
-      .insert({
-        id: data.user.id,
-        tenant_id: dto.tenantId ?? DEFAULT_SIGNUP_TENANT_ID,
-        email: dto.email,
-        role: "user",
-      });
+      .from("profiles")
+      .upsert(
+        {
+          id: data.user.id,
+          tenant_id: dto.tenantId ?? DEFAULT_SIGNUP_TENANT_ID,
+          email: dto.email,
+          role: "user",
+          is_active: true,
+        },
+        { onConflict: "id" },
+      );
 
     if (profileError) {
       // If profile creation fails, clean up the auth user
@@ -122,7 +126,7 @@ export class AuthService {
     // Fetch the user's profile data
     const { data: profile, error: profileError } = await this.supabaseService
       .getAdminClient()
-      .from("user_profiles")
+      .from("profiles")
       .select("*")
       .eq("id", userId)
       .single();

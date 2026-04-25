@@ -7,7 +7,7 @@
  *
  * Authentication is handled exclusively by SupabaseAuthGuard, which validates
  * Bearer tokens via the Supabase Admin API and enriches request.user with
- * role and tenantId from the user_profiles table.
+ * role and tenantId from the profiles table.
  *
  * See: src/auth/guards/supabase-auth.guard.ts
  */

@@ -21,13 +21,13 @@ CREATE TABLE IF NOT EXISTS tenants (
 );
 
 -- ============================================================
--- user_profiles
+-- profiles
 --
 -- Application-level user data linked to Supabase auth.users.
 -- DO NOT store passwords here — authentication is handled by Supabase Auth.
 -- The id is the same UUID as auth.users.id (foreign key across schemas).
 -- ============================================================
-CREATE TABLE IF NOT EXISTS user_profiles (
+CREATE TABLE IF NOT EXISTS profiles (
   id          UUID         PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
   tenant_id   UUID         NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
   email       VARCHAR(320) NOT NULL,
@@ -38,8 +38,8 @@ CREATE TABLE IF NOT EXISTS user_profiles (
   updated_at  TIMESTAMPTZ  NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX IF NOT EXISTS idx_user_profiles_tenant ON user_profiles(tenant_id);
-CREATE INDEX IF NOT EXISTS idx_user_profiles_email  ON user_profiles(email);
+CREATE INDEX IF NOT EXISTS idx_profiles_tenant ON profiles(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_profiles_email  ON profiles(email);
 
 -- ============================================================
 -- Conversations
@@ -214,7 +214,7 @@ $$;
 -- in the backend to bypass RLS for cross-tenant admin operations.
 -- ============================================================
 ALTER TABLE tenants       ENABLE ROW LEVEL SECURITY;
-ALTER TABLE user_profiles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE conversations  ENABLE ROW LEVEL SECURITY;
 ALTER TABLE messages       ENABLE ROW LEVEL SECURITY;
 ALTER TABLE usage_logs     ENABLE ROW LEVEL SECURITY;
@@ -222,7 +222,7 @@ ALTER TABLE async_jobs     ENABLE ROW LEVEL SECURITY;
 
 -- Users can read their own profile
 CREATE POLICY "users_read_own_profile"
-  ON user_profiles FOR SELECT
+  ON profiles FOR SELECT
   USING (auth.uid() = id);
 
 -- Users can read conversations in their tenant

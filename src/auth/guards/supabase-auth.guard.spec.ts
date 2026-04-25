@@ -81,7 +81,7 @@ describe('SupabaseAuthGuard', () => {
     await expect(guard.canActivate(ctx)).rejects.toThrow(UnauthorizedException);
   });
 
-  it('throws UnauthorizedException when user_profiles row is missing', async () => {
+  it('throws UnauthorizedException when profiles row is missing', async () => {
     adminClient.from.mockReturnValue(
       makeProfileBuilder({ data: null, error: { message: 'Row not found' } }),
     );
@@ -111,14 +111,14 @@ describe('SupabaseAuthGuard', () => {
     });
   });
 
-  it('queries user_profiles with the correct user id', async () => {
+  it('queries profiles with the correct user id', async () => {
     const profileBuilder = makeProfileBuilder({ data: MOCK_PROFILE, error: null });
     adminClient.from.mockReturnValue(profileBuilder);
     const { ctx } = makeContext('Bearer valid-token');
 
     await guard.canActivate(ctx);
 
-    expect(adminClient.from).toHaveBeenCalledWith('user_profiles');
+    expect(adminClient.from).toHaveBeenCalledWith('profiles');
     expect(profileBuilder.eq).toHaveBeenCalledWith('id', MOCK_USER.id);
   });
 });

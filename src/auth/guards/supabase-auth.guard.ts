@@ -12,7 +12,7 @@ import { SupabaseService } from '../../supabase/supabase.service';
  * SupabaseAuthGuard
  *
  * Validates the Bearer token via Supabase Auth, then enriches request.user
- * with role and tenantId fetched from the user_profiles table.
+ * with role and tenantId fetched from the profiles table.
  *
  * Without this enrichment:
  *  - RolesGuard always fails (user.role is undefined)
@@ -62,10 +62,10 @@ export class SupabaseAuthGuard implements CanActivate {
         throw new UnauthorizedException('Invalid or expired token');
       }
 
-      // Step 2: Fetch app-level profile (role, tenant) from user_profiles
+      // Step 2: Fetch app-level profile (role, tenant) from profiles
       const { data: profile, error: profileError } = await this.supabaseService
         .getAdminClient()
-        .from('user_profiles')
+        .from('profiles')
         .select('role, tenant_id, is_active')
         .eq('id', data.user.id)
         .single();
@@ -74,7 +74,7 @@ export class SupabaseAuthGuard implements CanActivate {
         // Profile missing means the user was created in Supabase Auth but
         // signup did not complete the profile step — treat as unauthorized.
         this.logger.warn(
-          `User ${data.user.id} has no user_profiles row. Signup may be incomplete.`,
+          `User ${data.user.id} has no profiles row. Signup may be incomplete.`,
         );
         throw new UnauthorizedException(
           'User profile not found. Please complete registration.',

@@ -13,6 +13,7 @@ const MOCK_SESSION = { access_token: 'access', refresh_token: 'refresh' };
 function makeInsertBuilder(result: { data: any; error: any }) {
   const b: any = {
     insert: jest.fn().mockReturnThis(),
+    upsert: jest.fn().mockReturnThis(),
   };
   b.then = (res: any, rej: any) => Promise.resolve(result).then(res, rej);
   return b;
@@ -80,13 +81,17 @@ describe('AuthService', () => {
 
       const result = await service.signUp(dto);
       expect(result).toEqual({ user: { id: 'user-123', email: 'test@example.com' }, session: MOCK_SESSION });
-      expect(adminClient.from).toHaveBeenCalledWith('user_profiles');
-      expect(adminClient.from.mock.results[0]?.value.insert).toHaveBeenCalledWith({
-        id: MOCK_USER.id,
-        tenant_id: dto.tenantId,
-        email: dto.email,
-        role: 'user',
-      });
+      expect(adminClient.from).toHaveBeenCalledWith('profiles');
+      expect(adminClient.from.mock.results[0]?.value.upsert).toHaveBeenCalledWith(
+        {
+          id: MOCK_USER.id,
+          tenant_id: dto.tenantId,
+          email: dto.email,
+          role: 'user',
+          is_active: true,
+        },
+        { onConflict: 'id' },
+      );
     });
 
     it('throws ConflictException when email already registered', async () => {
@@ -207,7 +212,7 @@ describe('AuthService', () => {
 
       const result = await service.getUser(MOCK_USER.id);
       expect(result).toEqual(profile);
-      expect(adminClient.from).toHaveBeenCalledWith('user_profiles');
+      expect(adminClient.from).toHaveBeenCalledWith('profiles');
     });
 
     it('throws UnauthorizedException on error', async () => {
