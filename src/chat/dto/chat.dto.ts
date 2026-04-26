@@ -24,7 +24,7 @@ export class SendMessageDto {
   @IsString()
   @MinLength(1)
   @MaxLength(32000)
-  content: string;
+  content!: string;
 
   @ApiProperty({ example: 'claude-3-5-sonnet-20241022', required: false, enum: ALLOWED_MODELS })
   @IsOptional()
@@ -34,34 +34,34 @@ export class SendMessageDto {
 
 export class ConversationResponseDto {
   @ApiProperty()
-  id: string;
+  id!: string;
 
   @ApiProperty()
-  title: string;
+  title!: string;
 
   @ApiProperty()
-  createdAt: Date;
+  createdAt!: Date;
 
   @ApiProperty()
-  updatedAt: Date;
+  updatedAt!: Date;
 
   @ApiProperty()
-  messageCount: number;
+  messageCount!: number;
 }
 
 export class MessageResponseDto {
   @ApiProperty()
-  id: string;
+  id!: string;
 
   @ApiProperty({ enum: ['user', 'assistant', 'system'] })
-  role: string;
+  role!: string;
 
   @ApiProperty()
-  content: string;
+  content!: string;
 
   @ApiProperty({ nullable: true })
-  tokens: number | null;
+  tokens!: number | null;
 
   @ApiProperty()
-  createdAt: Date;
+  createdAt!: Date;
 }
