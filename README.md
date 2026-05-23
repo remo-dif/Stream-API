@@ -1,161 +1,199 @@
-# AI SaaS Platform (NestJS + TypeScript)
+# Stream API
 
-Production-grade multi-tenant AI chat platform built with NestJS, TypeScript, and streaming AI responses.
+Multi-tenant AI SaaS backend built with NestJS, Supabase, Redis, and BullMQ.
 
-## Architecture
+This API handles:
+- Supabase auth and profile lookup
+- tenant-aware conversations and messages
+- SSE chat streaming
+- usage and quota tracking
+- async AI jobs
+- admin and tenant management
 
-```
-[Frontend] ──SSE──▶ [Nginx] ──▶ [NestJS API] ──▶ [PostgreSQL]
-                                      │
-                                 [Supabase Auth]
-                                      │
-                                 [Redis Cache]
-                                      │
-                                [BullMQ Worker] ──▶ [Anthropic API]
+## Current Architecture
+
+```text
+Next.js frontend
+  -> NestJS API
+    -> Supabase Auth + Postgres
+    -> Redis / BullMQ
+    -> OpenAI (default)
+    -> Anthropic (optional provider path)
 ```
 
 ## Tech Stack
 
-- **Backend:** NestJS 10 + TypeScript 5
-- **ORM:** TypeORM with PostgreSQL entities
-- **Authentication:** Supabase with JWT verification
-- **Database:** PostgreSQL (via Supabase)
-- **Queue:** BullMQ with Redis
-- **API Docs:** Swagger/OpenAPI
-- **Validation:** class-validator + class-transformer
-- **Streaming:** Server-Sent Events (SSE)
-- **AI Provider:** Anthropic API
+- NestJS 11
+- TypeScript 5
+- Supabase (`auth` + Postgres access)
+- BullMQ + Redis
+- Swagger
+- class-validator / class-transformer
+- OpenAI SDK
+- Anthropic SDK
 
-## Project Structure
+## Notes About Persistence
 
-```
+The app includes TypeORM entities for schema modeling, but the live application path is Supabase-first. Most reads and writes happen through the Supabase client rather than `TypeOrmModule`.
+
+## Main Modules
+
+```text
 src/
-├── main.ts                      # Application entry point
-├── app.module.ts                # Root module
-├── auth/                        # Supabase authentication
-│   ├── auth.controller.ts
-│   ├── auth.service.ts
-│   ├── guards/
-│   │   └── supabase-auth.guard.ts
-│   └── dto/
-│       └── auth.dto.ts
-├── chat/                        # AI conversations & streaming
-│   ├── chat.controller.ts
-│   ├── chat.service.ts
-│   ├── ai.service.ts            # Anthropic integration
-│   └── dto/
-│       └── chat.dto.ts
-├── admin/                       # User management (RBAC)
-│   ├── admin.controller.ts
-│   ├── admin.service.ts
-│   └── admin.module.ts
-├── usage/                       # Token usage tracking
-│   ├── usage.controller.ts
-│   ├── usage.service.ts
-│   └── usage.module.ts
-├── tenants/                     # Multi-tenancy
-│   ├── tenants.controller.ts
-│   ├── tenants.service.ts
-│   ├── tenants.module.ts
-│   └── dto/
-│       └── create-tenant.dto.ts
-├── jobs/                        # Async job submission
-│   ├── jobs.controller.ts
-│   ├── jobs.service.ts
-│   ├── jobs.module.ts
-│   └── dto/
-│       └── submit-job.dto.ts
-├── queue/                       # BullMQ job processing
-│   ├── ai-job.processor.ts      # Job processor
-│   ├── queue.module.ts
-│   └── queue.service.ts
-├── supabase/                    # Supabase integration
-│   ├── supabase.module.ts
-│   └── supabase.service.ts
-├── common/
-│   ├── guards/                  # Auth, Quota, Roles guards
-│   ├── decorators/              # @AuthUser, @Roles, @TenantId
-│   ├── filters/                 # Error handling
-│   └── interceptors/
-├── config/
-│   └── env.validation.ts        # Environment validation
-└── database/
-    ├── entities/                # TypeORM entities
-    │   ├── user.entity.ts
-    │   ├── tenant.entity.ts
-    │   ├── conversation.entity.ts
-    │   └── usage-log.entity.ts
-    └── schema.sql               # PostgreSQL schema
+  app.module.ts
+  main.ts
+  auth/         signup, signin, signout, refresh, auth guard
+  chat/         conversations, messages, streaming, LLM integration
+  usage/        dashboard and usage aggregation
+  jobs/         async job submission and listing
+  queue/        BullMQ worker + processor
+  tenants/      current tenant and tenant creation
+  admin/        role and user management
+  supabase/     Supabase client wiring
+  config/       environment validation
+  database/     SQL schema and entities
 ```
 
-## Quick Start
+## LLM Providers
+
+The backend now supports provider selection through config.
+
+Supported provider modes:
+- `openai` as the default
+- `anthropic` as an optional provider path
+
+Relevant environment variables:
+- `LLM_PROVIDER`
+- `OPENAI_API_KEY`
+- `OPENAI_MODEL`
+- `ANTHROPIC_API_KEY`
+- `ANTHROPIC_MODEL`
+
+Model overrides are inferred by model prefix:
+- `gpt-*` / `o*` -> OpenAI
+- `claude-*` -> Anthropic
+
+## Environment
+
+Copy `.env.example` to `.env` and fill in the required values.
+
+Important variables:
+
+```env
+NODE_ENV=production
+PORT=3000
+ALLOWED_ORIGINS=http://localhost:3001
+
+SUPABASE_URL=
+SUPABASE_ANON_KEY=
+SUPABASE_SERVICE_ROLE_KEY=
+
+REDIS_URL=redis://localhost:6379
+REDIS_HOST=localhost
+REDIS_PORT=6379
+
+LLM_PROVIDER=openai
+OPENAI_API_KEY=
+OPENAI_MODEL=gpt-4.1-mini
+ANTHROPIC_API_KEY=
+ANTHROPIC_MODEL=claude-3-5-sonnet-20241022
+```
+
+## Local Development
+
+Install dependencies:
 
 ```bash
-# Install dependencies
 npm install
+```
 
-# Copy environment variables
-cp .env.example .env
-# Fill in:
-#   - SUPABASE_URL, SUPABASE_KEY
-#   - ANTHROPIC_API_KEY
-#   - REDIS_URL, DATABASE_URL
-#   - JWT_SECRET (for internal signing)
+Start Redis with Docker:
 
-# Start with Docker Compose
-cd infrastructure/docker
-docker-compose up -d
+```bash
+docker compose -f infrastructure/docker/docker-compose.yml up -d redis
+```
 
-# Run migrations
-npm run migrate
+Run the API:
 
-# Development mode
+```bash
 npm run start:dev
+```
 
-# Production build
+Build for production:
+
+```bash
 npm run build
 npm run start:prod
 ```
 
-## API Documentation
+Swagger docs:
 
-Once running, visit: http://localhost:3000/api/docs
+```text
+http://localhost:3000/api/docs
+```
 
-## Key Features
+## Frontend Pairing
 
-| Feature | Implementation |
-|---------|---------------|
-| Type Safety | Full TypeScript with strict mode |
-| Dependency Injection | NestJS IoC container |
-| Validation | class-validator DTOs on all routes |
-| Authentication | Supabase JWT guard with @SupabaseAuthGuard |
-| RBAC | @Roles decorator + RolesGuard |
-| Multi-Tenancy | tenant_id isolation via TypeORM entities |
-| AI Streaming | Anthropic SDK → SSE via NestJS |
-| Token Tracking | TypeORM + Redis counters in UsageService |
-| Quota Management | QuotaGuard enforces usage limits |
-| Background Jobs | BullMQ with AI job processor |
-| Job Monitoring | JobsService with status tracking |
-| Admin Tools | AdminService for user management |
-| API Documentation | Swagger with @ApiTags, @ApiOperation |
-| Database | PostgreSQL with TypeORM entity mapping |
-| Queue System | Redis + BullMQ for async processing |
+This backend is designed to run with the sibling Next.js app in:
 
-## Environment Variables
+[`C:\Users\ASUS\Desktop\projects\stream-ui`](/C:/Users/ASUS/Desktop/projects/stream-ui)
 
-See `.env.example` for all required variables.
+Typical local ports:
+- API: `http://localhost:3000`
+- Frontend: `http://localhost:3001`
 
-## Deployment
+## Database Expectations
 
-Docker Compose is included for local/staging. For production AWS:
-- ECS Fargate containers
-- RDS PostgreSQL
-- ElastiCache Redis
-- Application Load Balancer
+The live app expects these core public tables:
+- `profiles`
+- `tenants`
+- `conversations`
+- `messages`
+- `usage_logs`
+- `async_jobs`
+
+The checked-in SQL defaults now align new conversations to:
+- `gpt-4.1-mini`
+
+If your live Supabase project was created before that change, apply the corresponding migration so DB defaults match the code.
+
+## Background Jobs
+
+BullMQ is used for tasks that should not block the request/response cycle.
+
+Current job types:
+- `summarize`
+- `analyze`
+- `translate`
+
+Worker entry:
+
+```bash
+npm run worker
+```
 
 ## Testing
 
+Run the full test suite:
+
 ```bash
-npm run test
+npm test -- --watch=false --runInBand
+```
+
+Coverage:
+
+```bash
 npm run test:cov
 ```
+
+## Current Status
+
+Verified recently:
+- backend build passes
+- backend test suite passes
+- Supabase auth/profile/tenant flow is wired
+- conversation and usage flows are working
+- OpenAI is the default provider path in code
+
+Remaining external dependency:
+- live generation still depends on whichever provider key you configure and fund
