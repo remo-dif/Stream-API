@@ -1,4 +1,10 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ForbiddenException,
+  HttpException,
+  HttpStatus,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { SupabaseService } from '../supabase/supabase.service';
 
 export enum TenantPlan {
@@ -9,9 +15,16 @@ export enum TenantPlan {
 
 @Injectable()
 export class TenantsService {
-  constructor(private supabaseService: SupabaseService) {}
+  constructor(private readonly supabaseService: SupabaseService) {}
 
   async getTenant(tenantId: string) {
+    if (!tenantId) {
+      throw new ForbiddenException({
+        error: 'User is not assigned to a tenant',
+        code: 'TENANT_MEMBERSHIP_REQUIRED',
+      });
+    }
+
     const { data: tenant, error } = await this.supabaseService
       .getAdminClient()
       .from('tenants')
@@ -21,6 +34,13 @@ export class TenantsService {
 
     if (error || !tenant) {
       throw new NotFoundException('Tenant not found');
+    }
+
+    if (tenant.is_active === false) {
+      throw new HttpException(
+        { error: 'Tenant account is suspended', code: 'TENANT_SUSPENDED' },
+        HttpStatus.FORBIDDEN,
+      );
     }
 
     return tenant;

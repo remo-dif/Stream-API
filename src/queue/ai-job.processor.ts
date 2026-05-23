@@ -52,7 +52,7 @@ export class AIJobProcessor extends WorkerHost {
     await job.updateProgress(10);
 
     const promptText = buildPrompt(payload);
-    const { text, inputTokens, outputTokens } =
+    const { text, inputTokens, outputTokens, model } =
       await this.aiService.createCompletion({
         messages: [{ role: 'user', content: promptText }],
       });
@@ -66,6 +66,7 @@ export class AIJobProcessor extends WorkerHost {
       inputTokens,
       outputTokens,
       totalTokens: inputTokens + outputTokens,
+      model,
     });
 
     await job.updateProgress(100);

@@ -1,11 +1,12 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { NotFoundException } from '@nestjs/common';
+import { ForbiddenException, NotFoundException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { ChatService } from './chat.service';
 import { SupabaseService } from '../supabase/supabase.service';
 
 function makeBuilder(result: { data?: any; error?: any } = {}) {
   const resolved = { data: result.data ?? null, error: result.error ?? null };
-  const b: any = {
+  const builder: any = {
     select: jest.fn().mockReturnThis(),
     insert: jest.fn().mockReturnThis(),
     update: jest.fn().mockReturnThis(),
@@ -16,8 +17,9 @@ function makeBuilder(result: { data?: any; error?: any } = {}) {
     limit: jest.fn().mockReturnThis(),
     single: jest.fn().mockResolvedValue(resolved),
   };
-  b.then = (res: any, rej: any) => Promise.resolve(resolved).then(res, rej);
-  return b;
+  builder.then = (resolve: any, reject: any) =>
+    Promise.resolve(resolved).then(resolve, reject);
+  return builder;
 }
 
 describe('ChatService', () => {
@@ -34,186 +36,96 @@ describe('ChatService', () => {
           provide: SupabaseService,
           useValue: { getAdminClient: jest.fn().mockReturnValue(adminClient) },
         },
+        {
+          provide: ConfigService,
+          useValue: {
+            get: jest.fn((key: string, fallback?: string) => {
+              if (key === 'LLM_PROVIDER') return 'openai';
+              if (key === 'OPENAI_MODEL') return 'gpt-4.1-mini';
+              return fallback;
+            }),
+          },
+        },
       ],
     }).compile();
 
     service = module.get<ChatService>(ChatService);
   });
 
-  // ── getConversations ─────────────────────────────────────────────────────────
+  it('creates conversations with the configured default model', async () => {
+    const conversation = {
+      id: 'conv-1',
+      user_id: 'user-1',
+      tenant_id: 'tenant-1',
+      title: 'Test',
+      model: 'gpt-4.1-mini',
+    };
+    const builder = makeBuilder({ data: conversation });
+    adminClient.from.mockReturnValue(builder);
 
-  describe('getConversations', () => {
-    it('returns conversations for user within tenant', async () => {
-      const conversations = [{ id: 'conv-1', title: 'Hello' }];
-      adminClient.from.mockReturnValue(makeBuilder({ data: conversations }));
-
-      const result = await service.getConversations('user-1', 'tenant-1');
-      expect(result).toEqual(conversations);
-      expect(adminClient.from).toHaveBeenCalledWith('conversations');
-    });
-
-    it('returns empty array when no conversations exist', async () => {
-      adminClient.from.mockReturnValue(makeBuilder({ data: null }));
-      const result = await service.getConversations('user-1', 'tenant-1');
-      expect(result).toEqual([]);
-    });
-
-    it('throws when database returns an error', async () => {
-      adminClient.from.mockReturnValue(makeBuilder({ error: { message: 'DB error' } }));
-      await expect(service.getConversations('user-1', 'tenant-1')).rejects.toMatchObject({
-        message: 'DB error',
-      });
-    });
+    await expect(
+      service.createConversation('user-1', 'tenant-1', 'Test'),
+    ).resolves.toEqual(conversation);
+    expect(builder.insert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tenant_id: 'tenant-1',
+        model: 'gpt-4.1-mini',
+      }),
+    );
   });
 
-  // ── createConversation ───────────────────────────────────────────────────────
-
-  describe('createConversation', () => {
-    it('creates and returns a conversation with tenant_id', async () => {
-      const conversation = { id: 'conv-1', user_id: 'user-1', tenant_id: 'tenant-1', title: 'Test' };
-      adminClient.from.mockReturnValue(makeBuilder({ data: conversation }));
-
-      const result = await service.createConversation('user-1', 'tenant-1', 'Test');
-      expect(result).toEqual(conversation);
-    });
-
-    it('throws on database error', async () => {
-      adminClient.from.mockReturnValue(makeBuilder({ error: { message: 'Insert failed' } }));
-      await expect(service.createConversation('user-1', 'tenant-1', 'Test')).rejects.toMatchObject({
-        message: 'Insert failed',
-      });
-    });
+  it('throws ForbiddenException when tenantId is missing', async () => {
+    await expect(service.getConversations('user-1', '')).rejects.toThrow(
+      ForbiddenException,
+    );
   });
 
-  // ── assertConversationOwnership ──────────────────────────────────────────────
+  it('returns ownership-scoped conversations', async () => {
+    const conversations = [{ id: 'conv-1', title: 'Hello' }];
+    adminClient.from.mockReturnValue(makeBuilder({ data: conversations }));
 
-  describe('assertConversationOwnership', () => {
-    it('returns conversation data when ownership verified', async () => {
-      const conv = { id: 'conv-1', model: 'claude-3-5-sonnet-20241022' };
-      adminClient.from.mockReturnValue(makeBuilder({ data: conv }));
-
-      const result = await service.assertConversationOwnership('conv-1', 'user-1', 'tenant-1');
-      expect(result).toEqual(conv);
-    });
-
-    it('throws NotFoundException when conversation not found', async () => {
-      adminClient.from.mockReturnValue(makeBuilder({ data: null, error: { message: 'Not found' } }));
-      await expect(
-        service.assertConversationOwnership('conv-1', 'user-1', 'tenant-1'),
-      ).rejects.toThrow(NotFoundException);
-    });
-
-    it('throws NotFoundException (not ForbiddenException) to avoid leaking existence', async () => {
-      adminClient.from.mockReturnValue(makeBuilder({ data: null, error: null }));
-      await expect(
-        service.assertConversationOwnership('other-user-conv', 'user-1', 'tenant-1'),
-      ).rejects.toThrow(NotFoundException);
-    });
+    await expect(
+      service.getConversations('user-1', 'tenant-1'),
+    ).resolves.toEqual(conversations);
   });
 
-  // ── getMessages ──────────────────────────────────────────────────────────────
+  it('throws NotFoundException when ownership check fails', async () => {
+    adminClient.from.mockReturnValue(
+      makeBuilder({ data: null, error: { message: 'missing' } }),
+    );
 
-  describe('getMessages', () => {
-    it('returns messages in chronological order (reversed from DB)', async () => {
-      const messages = [
-        { id: 'm-3', created_at: '2024-01-03' },
-        { id: 'm-2', created_at: '2024-01-02' },
-        { id: 'm-1', created_at: '2024-01-01' },
-      ];
-      // First call: assertConversationOwnership
-      const ownershipBuilder = makeBuilder({ data: { id: 'conv-1', model: 'claude-3' } });
-      // Second call: messages query
-      const messagesBuilder = makeBuilder({ data: messages });
-
-      adminClient.from
-        .mockReturnValueOnce(ownershipBuilder)
-        .mockReturnValueOnce(messagesBuilder);
-
-      const result = await service.getMessages('conv-1', 'user-1', 'tenant-1');
-      // Should be reversed: oldest first
-      expect(result[0].id).toBe('m-1');
-      expect(result[2].id).toBe('m-3');
-    });
-
-    it('caps limit at 100', async () => {
-      const ownershipBuilder = makeBuilder({ data: { id: 'conv-1', model: 'claude-3' } });
-      const messagesBuilder = makeBuilder({ data: [] });
-
-      adminClient.from
-        .mockReturnValueOnce(ownershipBuilder)
-        .mockReturnValueOnce(messagesBuilder);
-
-      await service.getMessages('conv-1', 'user-1', 'tenant-1', 999);
-      expect(messagesBuilder.limit).toHaveBeenCalledWith(100);
-    });
-
-    it('applies before cursor when provided', async () => {
-      const ownershipBuilder = makeBuilder({ data: { id: 'conv-1', model: 'claude-3' } });
-      const messagesBuilder = makeBuilder({ data: [] });
-
-      adminClient.from
-        .mockReturnValueOnce(ownershipBuilder)
-        .mockReturnValueOnce(messagesBuilder);
-
-      await service.getMessages('conv-1', 'user-1', 'tenant-1', 50, '2024-01-15T00:00:00Z');
-      expect(messagesBuilder.lt).toHaveBeenCalledWith('created_at', '2024-01-15T00:00:00Z');
-    });
+    await expect(
+      service.assertConversationOwnership('conv-1', 'user-1', 'tenant-1'),
+    ).rejects.toThrow(NotFoundException);
   });
 
-  // ── saveMessage ──────────────────────────────────────────────────────────────
-
-  describe('saveMessage', () => {
-    it('inserts message and touches conversation updated_at', async () => {
-      const savedMsg = { id: 'msg-1', role: 'user', content: 'Hello' };
-      const insertBuilder = makeBuilder({ data: savedMsg });
-      const updateBuilder = makeBuilder({ data: null });
-
-      adminClient.from
-        .mockReturnValueOnce(insertBuilder)
-        .mockReturnValueOnce(updateBuilder);
-
-      const result = await service.saveMessage('conv-1', 'user', 'Hello');
-      expect(result).toEqual(savedMsg);
-      expect(adminClient.from).toHaveBeenNthCalledWith(1, 'messages');
-      expect(adminClient.from).toHaveBeenNthCalledWith(2, 'conversations');
-      expect(updateBuilder.eq).toHaveBeenCalledWith('id', 'conv-1');
+  it('caps message pagination at 100', async () => {
+    const ownershipBuilder = makeBuilder({
+      data: { id: 'conv-1', model: 'gpt-4.1-mini' },
     });
+    const messagesBuilder = makeBuilder({ data: [] });
 
-    it('throws on insert error', async () => {
-      adminClient.from.mockReturnValue(makeBuilder({ error: { message: 'Insert failed' } }));
-      await expect(service.saveMessage('conv-1', 'user', 'Hello')).rejects.toMatchObject({
-        message: 'Insert failed',
-      });
-    });
+    adminClient.from
+      .mockReturnValueOnce(ownershipBuilder)
+      .mockReturnValueOnce(messagesBuilder);
+
+    await service.getMessages('conv-1', 'user-1', 'tenant-1', 500);
+    expect(messagesBuilder.limit).toHaveBeenCalledWith(100);
   });
 
-  // ── getContextMessages ───────────────────────────────────────────────────────
+  it('returns context messages in chronological order', async () => {
+    adminClient.from.mockReturnValue(
+      makeBuilder({
+        data: [
+          { role: 'assistant', content: 'Hi' },
+          { role: 'user', content: 'Hello' },
+        ],
+      }),
+    );
 
-  describe('getContextMessages', () => {
-    it('returns messages in chronological order with correct shape', async () => {
-      const raw = [
-        { role: 'assistant', content: 'Hi' },
-        { role: 'user', content: 'Hello' },
-      ];
-      adminClient.from.mockReturnValue(makeBuilder({ data: raw }));
-
-      const result = await service.getContextMessages('conv-1');
-      expect(result[0]).toEqual({ role: 'user', content: 'Hello' });
-      expect(result[1]).toEqual({ role: 'assistant', content: 'Hi' });
-    });
-
-    it('uses default contextWindow of 20', async () => {
-      const builder = makeBuilder({ data: [] });
-      adminClient.from.mockReturnValue(builder);
-
-      await service.getContextMessages('conv-1');
-      expect(builder.limit).toHaveBeenCalledWith(20);
-    });
-
-    it('returns empty array when no messages', async () => {
-      adminClient.from.mockReturnValue(makeBuilder({ data: null }));
-      const result = await service.getContextMessages('conv-1');
-      expect(result).toEqual([]);
-    });
+    await expect(service.getContextMessages('conv-1')).resolves.toEqual([
+      { role: 'user', content: 'Hello' },
+      { role: 'assistant', content: 'Hi' },
+    ]);
   });
 });

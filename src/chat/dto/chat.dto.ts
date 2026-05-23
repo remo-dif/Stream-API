@@ -1,15 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsString, IsOptional, MaxLength, MinLength, IsIn } from 'class-validator';
-
-export const ALLOWED_MODELS = [
-  'claude-opus-4-6',
-  'claude-sonnet-4-6',
-  'claude-haiku-4-5-20251001',
-  'claude-3-5-sonnet-20241022',
-  'claude-3-5-haiku-20241022',
-  'claude-3-opus-20240229',
-  'claude-3-haiku-20240307',
-] as const;
+import { IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
 
 export class CreateConversationDto {
   @ApiProperty({ example: 'My AI Conversation', required: false })
@@ -26,9 +16,15 @@ export class SendMessageDto {
   @MaxLength(32000)
   content!: string;
 
-  @ApiProperty({ example: 'claude-3-5-sonnet-20241022', required: false, enum: ALLOWED_MODELS })
+  @ApiProperty({
+    example: 'gpt-4.1-mini',
+    required: false,
+    description:
+      'Optional provider-specific model override, for example gpt-4.1-mini or claude-3-5-sonnet-20241022.',
+  })
   @IsOptional()
-  @IsIn(ALLOWED_MODELS)
+  @IsString()
+  @MaxLength(100)
   model?: string;
 }
 

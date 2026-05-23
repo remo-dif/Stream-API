@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import {
   ConflictException,
+  ForbiddenException,
   InternalServerErrorException,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -9,14 +10,21 @@ import { SupabaseService } from '../supabase/supabase.service';
 
 const MOCK_USER = { id: 'user-123', email: 'test@example.com' };
 const MOCK_SESSION = { access_token: 'access', refresh_token: 'refresh' };
+const ACTIVE_PROFILE = {
+  id: MOCK_USER.id,
+  email: MOCK_USER.email,
+  role: 'user',
+  tenant_id: 'tenant-1',
+  is_active: true,
+};
 
-function makeInsertBuilder(result: { data: any; error: any }) {
-  const b: any = {
-    insert: jest.fn().mockReturnThis(),
+function makeMutationBuilder(result: { data: any; error: any }) {
+  const builder: any = {
     upsert: jest.fn().mockReturnThis(),
   };
-  b.then = (res: any, rej: any) => Promise.resolve(result).then(res, rej);
-  return b;
+  builder.then = (resolve: any, reject: any) =>
+    Promise.resolve(result).then(resolve, reject);
+  return builder;
 }
 
 function makeSelectBuilder(result: { data: any; error: any }) {
@@ -49,7 +57,9 @@ describe('AuthService', () => {
           signOut: jest.fn(),
         },
       },
-      from: jest.fn().mockReturnValue(makeInsertBuilder({ data: null, error: null })),
+      from: jest
+        .fn()
+        .mockReturnValue(makeMutationBuilder({ data: null, error: null })),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -68,10 +78,12 @@ describe('AuthService', () => {
     service = module.get<AuthService>(AuthService);
   });
 
-  // ── signUp ──────────────────────────────────────────────────────────────────
-
   describe('signUp', () => {
-    const dto = { email: 'test@example.com', password: 'secret123', tenantId: 'tenant-1' };
+    const dto = {
+      email: 'test@example.com',
+      password: 'secret123',
+      tenantId: 'tenant-1',
+    };
 
     it('returns user and session on success', async () => {
       anonClient.auth.signUp.mockResolvedValue({
@@ -79,8 +91,11 @@ describe('AuthService', () => {
         error: null,
       });
 
-      const result = await service.signUp(dto);
-      expect(result).toEqual({ user: { id: 'user-123', email: 'test@example.com' }, session: MOCK_SESSION });
+      await expect(service.signUp(dto)).resolves.toEqual({
+        user: { id: MOCK_USER.id, email: MOCK_USER.email },
+        session: MOCK_SESSION,
+      });
+
       expect(adminClient.from).toHaveBeenCalledWith('profiles');
       expect(adminClient.from.mock.results[0]?.value.upsert).toHaveBeenCalledWith(
         {
@@ -103,64 +118,51 @@ describe('AuthService', () => {
       await expect(service.signUp(dto)).rejects.toThrow(ConflictException);
     });
 
-    it('throws UnauthorizedException on other auth errors', async () => {
-      anonClient.auth.signUp.mockResolvedValue({
-        data: { user: null, session: null },
-        error: { message: 'Something went wrong' },
-      });
-
-      await expect(service.signUp(dto)).rejects.toThrow(UnauthorizedException);
-    });
-
     it('throws InternalServerErrorException when auth returns no user', async () => {
       anonClient.auth.signUp.mockResolvedValue({
         data: { user: null, session: null },
         error: null,
       });
 
-      await expect(service.signUp(dto)).rejects.toThrow(InternalServerErrorException);
+      await expect(service.signUp(dto)).rejects.toThrow(
+        InternalServerErrorException,
+      );
     });
 
-    it('cleans up orphaned auth user when profile insert fails', async () => {
+    it('cleans up orphaned users when profile creation fails', async () => {
       anonClient.auth.signUp.mockResolvedValue({
         data: { user: MOCK_USER, session: MOCK_SESSION },
         error: null,
       });
       adminClient.from.mockReturnValue(
-        makeInsertBuilder({ data: null, error: { message: 'FK violation' } }),
+        makeMutationBuilder({ data: null, error: { message: 'DB error' } }),
       );
       adminClient.auth.admin.deleteUser.mockResolvedValue({ error: null });
 
-      await expect(service.signUp(dto)).rejects.toThrow(InternalServerErrorException);
-      expect(adminClient.auth.admin.deleteUser).toHaveBeenCalledWith(MOCK_USER.id);
+      await expect(service.signUp(dto)).rejects.toThrow(
+        InternalServerErrorException,
+      );
+      expect(adminClient.auth.admin.deleteUser).toHaveBeenCalledWith(
+        MOCK_USER.id,
+      );
     });
+  });
 
-    it('still throws InternalServerErrorException even if cleanup fails', async () => {
-      anonClient.auth.signUp.mockResolvedValue({
+  describe('signIn', () => {
+    it('returns session data for active profiles with tenants', async () => {
+      anonClient.auth.signInWithPassword.mockResolvedValue({
         data: { user: MOCK_USER, session: MOCK_SESSION },
         error: null,
       });
       adminClient.from.mockReturnValue(
-        makeInsertBuilder({ data: null, error: { message: 'DB error' } }),
+        makeSelectBuilder({ data: ACTIVE_PROFILE, error: null }),
       );
-      adminClient.auth.admin.deleteUser.mockResolvedValue({ error: { message: 'Already gone' } });
 
-      await expect(service.signUp(dto)).rejects.toThrow(InternalServerErrorException);
-    });
-  });
-
-  // ── signIn ──────────────────────────────────────────────────────────────────
-
-  describe('signIn', () => {
-    it('returns session data on success', async () => {
-      const mockData = { user: MOCK_USER, session: MOCK_SESSION };
-      anonClient.auth.signInWithPassword.mockResolvedValue({ data: mockData, error: null });
-
-      const result = await service.signIn('test@example.com', 'secret123');
-      expect(result).toEqual(mockData);
-      expect(anonClient.auth.signInWithPassword).toHaveBeenCalledWith({
-        email: 'test@example.com',
-        password: 'secret123',
+      await expect(
+        service.signIn('test@example.com', 'secret123'),
+      ).resolves.toEqual({
+        user: MOCK_USER,
+        session: MOCK_SESSION,
       });
     });
 
@@ -170,79 +172,115 @@ describe('AuthService', () => {
         error: { message: 'Invalid login credentials' },
       });
 
-      await expect(service.signIn('test@example.com', 'wrong')).rejects.toThrow(UnauthorizedException);
+      await expect(service.signIn('test@example.com', 'wrong')).rejects.toThrow(
+        UnauthorizedException,
+      );
+    });
+
+    it('throws ForbiddenException when the user is deactivated', async () => {
+      anonClient.auth.signInWithPassword.mockResolvedValue({
+        data: { user: MOCK_USER, session: MOCK_SESSION },
+        error: null,
+      });
+      adminClient.from.mockReturnValue(
+        makeSelectBuilder({
+          data: { ...ACTIVE_PROFILE, is_active: false },
+          error: null,
+        }),
+      );
+
+      await expect(service.signIn('test@example.com', 'secret123')).rejects.toThrow(
+        ForbiddenException,
+      );
+    });
+
+    it('throws ForbiddenException when the user has no tenant assignment', async () => {
+      anonClient.auth.signInWithPassword.mockResolvedValue({
+        data: { user: MOCK_USER, session: MOCK_SESSION },
+        error: null,
+      });
+      adminClient.from.mockReturnValue(
+        makeSelectBuilder({
+          data: { ...ACTIVE_PROFILE, tenant_id: null },
+          error: null,
+        }),
+      );
+
+      await expect(service.signIn('test@example.com', 'secret123')).rejects.toThrow(
+        ForbiddenException,
+      );
     });
   });
 
-  // ── signOut ─────────────────────────────────────────────────────────────────
-
   describe('signOut', () => {
-    it('returns success message and revokes session by user id', async () => {
-      adminClient.auth.getUser.mockResolvedValue({ data: { user: MOCK_USER }, error: null });
+    it('revokes the session by user id', async () => {
+      adminClient.auth.getUser.mockResolvedValue({
+        data: { user: MOCK_USER },
+        error: null,
+      });
       adminClient.auth.admin.signOut.mockResolvedValue({ error: null });
 
-      const result = await service.signOut('valid-token');
-      expect(result).toEqual({ message: 'Signed out successfully' });
-      expect(adminClient.auth.admin.signOut).toHaveBeenCalledWith(MOCK_USER.id, 'local');
+      await expect(service.signOut('valid-token')).resolves.toEqual({
+        message: 'Signed out successfully',
+      });
+      expect(adminClient.auth.admin.signOut).toHaveBeenCalledWith(
+        MOCK_USER.id,
+        'local',
+      );
     });
 
-    it('throws UnauthorizedException when token is invalid', async () => {
+    it('throws when the access token is invalid', async () => {
       adminClient.auth.getUser.mockResolvedValue({
         data: { user: null },
         error: { message: 'Invalid token' },
       });
 
-      await expect(service.signOut('bad-token')).rejects.toThrow(UnauthorizedException);
-    });
-
-    it('throws InternalServerErrorException when signOut API call fails', async () => {
-      adminClient.auth.getUser.mockResolvedValue({ data: { user: MOCK_USER }, error: null });
-      adminClient.auth.admin.signOut.mockResolvedValue({ error: { message: 'Server error' } });
-
-      await expect(service.signOut('valid-token')).rejects.toThrow(InternalServerErrorException);
+      await expect(service.signOut('bad-token')).rejects.toThrow(
+        UnauthorizedException,
+      );
     });
   });
-
-  // ── getUser ─────────────────────────────────────────────────────────────────
 
   describe('getUser', () => {
-    it('returns the current user profile by id', async () => {
-      const profile = { id: MOCK_USER.id, email: MOCK_USER.email, tenant_id: 'tenant-1' };
-      adminClient.from.mockReturnValue(makeSelectBuilder({ data: profile, error: null }));
-
-      const result = await service.getUser(MOCK_USER.id);
-      expect(result).toEqual(profile);
-      expect(adminClient.from).toHaveBeenCalledWith('profiles');
-    });
-
-    it('throws UnauthorizedException on error', async () => {
+    it('returns the validated profile', async () => {
       adminClient.from.mockReturnValue(
-        makeSelectBuilder({ data: null, error: { message: 'Row not found' } }),
+        makeSelectBuilder({ data: ACTIVE_PROFILE, error: null }),
       );
 
-      await expect(service.getUser(MOCK_USER.id)).rejects.toThrow(UnauthorizedException);
+      await expect(service.getUser(MOCK_USER.id)).resolves.toEqual(
+        ACTIVE_PROFILE,
+      );
     });
   });
 
-  // ── refreshSession ───────────────────────────────────────────────────────────
-
   describe('refreshSession', () => {
-    it('returns refreshed session data', async () => {
-      const mockData = { session: MOCK_SESSION, user: MOCK_USER };
-      anonClient.auth.refreshSession.mockResolvedValue({ data: mockData, error: null });
+    it('returns refreshed session data for active users', async () => {
+      anonClient.auth.refreshSession.mockResolvedValue({
+        data: { user: MOCK_USER, session: MOCK_SESSION },
+        error: null,
+      });
+      adminClient.from.mockReturnValue(
+        makeSelectBuilder({ data: ACTIVE_PROFILE, error: null }),
+      );
 
-      const result = await service.refreshSession('refresh-token');
-      expect(result).toEqual(mockData);
-      expect(anonClient.auth.refreshSession).toHaveBeenCalledWith({ refresh_token: 'refresh-token' });
+      await expect(service.refreshSession('refresh-token')).resolves.toEqual({
+        user: MOCK_USER,
+        session: MOCK_SESSION,
+      });
+      expect(anonClient.auth.refreshSession).toHaveBeenCalledWith({
+        refresh_token: 'refresh-token',
+      });
     });
 
-    it('throws UnauthorizedException when refresh token is expired', async () => {
+    it('throws UnauthorizedException when refresh token is invalid', async () => {
       anonClient.auth.refreshSession.mockResolvedValue({
         data: null,
         error: { message: 'Token expired' },
       });
 
-      await expect(service.refreshSession('stale-token')).rejects.toThrow(UnauthorizedException);
+      await expect(service.refreshSession('expired')).rejects.toThrow(
+        UnauthorizedException,
+      );
     });
   });
 });

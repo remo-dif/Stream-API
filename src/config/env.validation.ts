@@ -7,6 +7,7 @@ import {
   Min,
   validateSync,
 } from 'class-validator';
+import { DEFAULT_MODEL_BY_PROVIDER, LlmProvider } from '../chat/llm.constants';
 
 enum Environment {
   Development = 'development',
@@ -33,8 +34,25 @@ class EnvironmentVariables {
   @IsString()
   SUPABASE_SERVICE_ROLE_KEY!: string;
 
+  @IsEnum(LlmProvider)
+  @IsOptional()
+  LLM_PROVIDER: LlmProvider = LlmProvider.OPENAI;
+
   @IsString()
-  ANTHROPIC_API_KEY!: string;
+  @IsOptional()
+  OPENAI_API_KEY?: string;
+
+  @IsString()
+  @IsOptional()
+  OPENAI_MODEL: string = DEFAULT_MODEL_BY_PROVIDER[LlmProvider.OPENAI];
+
+  @IsString()
+  @IsOptional()
+  ANTHROPIC_API_KEY?: string;
+
+  @IsString()
+  @IsOptional()
+  ANTHROPIC_MODEL: string = DEFAULT_MODEL_BY_PROVIDER[LlmProvider.ANTHROPIC];
 
   @IsString()
   @IsOptional()
@@ -65,9 +83,27 @@ export function validate(config: Record<string, unknown>) {
 
   if (errors.length > 0) {
     const messages = errors
-      .map((e) => Object.values(e.constraints ?? {}).join(', '))
+      .map((error) => Object.values(error.constraints ?? {}).join(', '))
       .join('; ');
     throw new Error(`Configuration validation failed: ${messages}`);
+  }
+
+  if (
+    validatedConfig.LLM_PROVIDER === LlmProvider.OPENAI &&
+    !validatedConfig.OPENAI_API_KEY
+  ) {
+    throw new Error(
+      'Configuration validation failed: OPENAI_API_KEY is required when LLM_PROVIDER=openai',
+    );
+  }
+
+  if (
+    validatedConfig.LLM_PROVIDER === LlmProvider.ANTHROPIC &&
+    !validatedConfig.ANTHROPIC_API_KEY
+  ) {
+    throw new Error(
+      'Configuration validation failed: ANTHROPIC_API_KEY is required when LLM_PROVIDER=anthropic',
+    );
   }
 
   return validatedConfig;

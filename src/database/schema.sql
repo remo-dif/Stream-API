@@ -49,7 +49,7 @@ CREATE TABLE IF NOT EXISTS conversations (
   user_id     UUID         NOT NULL REFERENCES auth.users(id)  ON DELETE CASCADE,
   tenant_id   UUID         NOT NULL REFERENCES tenants(id)     ON DELETE CASCADE,
   title       VARCHAR(500),
-  model       VARCHAR(100) DEFAULT 'claude-3-5-sonnet-20241022',
+  model       VARCHAR(100) DEFAULT 'gpt-4.1-mini',
   is_archived BOOLEAN      DEFAULT false,
   metadata    JSONB        DEFAULT '{}',
   created_at  TIMESTAMPTZ  NOT NULL DEFAULT NOW(),

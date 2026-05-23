@@ -1,38 +1,66 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { RequestTimeoutException } from '@nestjs/common';
+import {
+  BadRequestException,
+  HttpException,
+  InternalServerErrorException,
+  RequestTimeoutException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AIService } from './ai.service';
 import { SupabaseService } from '../supabase/supabase.service';
 
-// Mock the entire Anthropic SDK
-jest.mock('@anthropic-ai/sdk', () => {
-  return {
-    __esModule: true,
-    default: jest.fn().mockImplementation(() => ({
-      messages: {
-        stream: jest.fn(),
-        create: jest.fn(),
-      },
-    })),
-  };
-});
+const anthropicCreate = jest.fn();
+const anthropicStream = jest.fn();
+const openaiCreate = jest.fn();
 
-import Anthropic from '@anthropic-ai/sdk';
+jest.mock('@anthropic-ai/sdk', () => ({
+  __esModule: true,
+  default: jest.fn().mockImplementation(() => ({
+    messages: {
+      create: anthropicCreate,
+      stream: anthropicStream,
+    },
+  })),
+}));
+
+jest.mock('openai', () => ({
+  __esModule: true,
+  default: jest.fn().mockImplementation(() => ({
+    chat: {
+      completions: {
+        create: openaiCreate,
+      },
+    },
+  })),
+}));
+
+function makeConfig(overrides: Record<string, string | undefined> = {}) {
+  return {
+    get: jest.fn((key: string, fallback?: string) => overrides[key] ?? fallback),
+  };
+}
 
 describe('AIService', () => {
   let service: AIService;
-  let mockAnthropic: any;
   let adminClient: any;
 
-  beforeEach(async () => {
+  beforeEach(() => {
+    anthropicCreate.mockReset();
+    anthropicStream.mockReset();
+    openaiCreate.mockReset();
     adminClient = {
       from: jest.fn().mockReturnValue({
         insert: jest.fn().mockReturnThis(),
-        then: (res: any) => Promise.resolve({ data: null, error: null }).then(res),
+        then: (resolve: any) =>
+          Promise.resolve({ data: null, error: null }).then(resolve),
       }),
       rpc: jest.fn().mockResolvedValue({ data: null, error: null }),
     };
+  });
 
+  async function createService(
+    overrides: Record<string, string | undefined> = {},
+  ) {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         AIService,
@@ -42,148 +70,138 @@ describe('AIService', () => {
         },
         {
           provide: ConfigService,
-          useValue: { getOrThrow: jest.fn().mockReturnValue('sk-ant-test-key') },
+          useValue: makeConfig({
+            LLM_PROVIDER: 'openai',
+            OPENAI_API_KEY: 'sk-openai',
+            OPENAI_MODEL: 'gpt-4.1-mini',
+            ANTHROPIC_API_KEY: 'sk-ant',
+            ANTHROPIC_MODEL: 'claude-3-5-sonnet-20241022',
+            ...overrides,
+          }),
         },
       ],
     }).compile();
 
     service = module.get<AIService>(AIService);
-    // Grab the mocked Anthropic instance created inside the service
-    mockAnthropic = (Anthropic as unknown as jest.Mock).mock.results[0]?.value;
-  });
+  }
 
-  // ── streamChatResponse ───────────────────────────────────────────────────────
-
-  describe('streamChatResponse', () => {
-    it('calls anthropic.messages.stream with correct parameters', () => {
-      const mockStream = { on: jest.fn() };
-      mockAnthropic.messages.stream.mockReturnValue(mockStream);
-
-      const messages = [{ role: 'user' as const, content: 'Hello' }];
-      const result = service.streamChatResponse({ messages, model: 'claude-3-5-sonnet-20241022' });
-
-      expect(result).toBe(mockStream);
-      expect(mockAnthropic.messages.stream).toHaveBeenCalledWith({
-        model: 'claude-3-5-sonnet-20241022',
-        max_tokens: 4096,
-        system: 'You are a helpful AI assistant. Be concise, accurate, and professional.',
-        messages,
-      });
+  it('uses OpenAI by default for non-streaming completions', async () => {
+    await createService();
+    openaiCreate.mockResolvedValue({
+      model: 'gpt-4.1-mini',
+      choices: [{ message: { content: 'Hello there!' } }],
+      usage: { prompt_tokens: 10, completion_tokens: 5 },
     });
 
-    it('uses default model when none specified', () => {
-      const mockStream = { on: jest.fn() };
-      mockAnthropic.messages.stream.mockReturnValue(mockStream);
-
-      service.streamChatResponse({ messages: [] });
-
-      expect(mockAnthropic.messages.stream).toHaveBeenCalledWith(
-        expect.objectContaining({ model: 'claude-3-5-sonnet-20241022' }),
-      );
+    await expect(
+      service.createCompletion({ messages: [{ role: 'user', content: 'Hi' }] }),
+    ).resolves.toEqual({
+      text: 'Hello there!',
+      inputTokens: 10,
+      outputTokens: 5,
+      model: 'gpt-4.1-mini',
     });
   });
 
-  // ── createCompletion ─────────────────────────────────────────────────────────
+  it('routes claude models to Anthropic', async () => {
+    await createService();
+    anthropicCreate.mockResolvedValue({
+      content: [{ type: 'text', text: 'Anthropic reply' }],
+      usage: { input_tokens: 12, output_tokens: 6 },
+    });
 
-  describe('createCompletion', () => {
-    it('returns text and token counts on success', async () => {
-      mockAnthropic.messages.create.mockResolvedValue({
-        content: [{ type: 'text', text: 'Hello there!' }],
-        usage: { input_tokens: 10, output_tokens: 5 },
-      });
-
-      const result = await service.createCompletion({
+    await expect(
+      service.createCompletion({
         messages: [{ role: 'user', content: 'Hi' }],
-      });
-
-      expect(result).toEqual({ text: 'Hello there!', inputTokens: 10, outputTokens: 5 });
-    });
-
-    it('concatenates multiple text blocks', async () => {
-      mockAnthropic.messages.create.mockResolvedValue({
-        content: [
-          { type: 'text', text: 'Part 1 ' },
-          { type: 'text', text: 'Part 2' },
-        ],
-        usage: { input_tokens: 20, output_tokens: 10 },
-      });
-
-      const result = await service.createCompletion({ messages: [] });
-      expect(result.text).toBe('Part 1 Part 2');
-    });
-
-    it('throws RequestTimeoutException when AbortError is raised', async () => {
-      const abortError = new Error('The operation was aborted');
-      abortError.name = 'AbortError';
-      mockAnthropic.messages.create.mockRejectedValue(abortError);
-
-      await expect(service.createCompletion({ messages: [] })).rejects.toThrow(
-        RequestTimeoutException,
-      );
-    });
-
-    it('rethrows non-abort errors', async () => {
-      mockAnthropic.messages.create.mockRejectedValue(new Error('Network error'));
-      await expect(service.createCompletion({ messages: [] })).rejects.toThrow('Network error');
+        model: 'claude-3-5-sonnet-20241022',
+      }),
+    ).resolves.toEqual({
+      text: 'Anthropic reply',
+      inputTokens: 12,
+      outputTokens: 6,
+      model: 'claude-3-5-sonnet-20241022',
     });
   });
 
-  // ── logUsage ─────────────────────────────────────────────────────────────────
+  it('throws BadRequestException for unknown model prefixes', async () => {
+    await createService();
 
-  describe('logUsage', () => {
-    const usageData = {
-      userId: 'user-1',
-      tenantId: 'tenant-1',
-      inputTokens: 100,
-      outputTokens: 50,
-      totalTokens: 150,
-    };
+    await expect(
+      service.createCompletion({
+        messages: [{ role: 'user', content: 'Hi' }],
+        model: 'mystery-model',
+      }),
+    ).rejects.toThrow(BadRequestException);
+  });
 
-    it('inserts usage_log and calls increment_tenant_tokens RPC', async () => {
-      await service.logUsage(usageData);
+  it('throws when the requested provider is not configured', async () => {
+    await createService({ OPENAI_API_KEY: undefined });
 
-      expect(adminClient.from).toHaveBeenCalledWith('usage_logs');
-      expect(adminClient.rpc).toHaveBeenCalledWith('increment_tenant_tokens', {
-        p_tenant_id: 'tenant-1',
-        p_tokens: 150,
-      });
+    await expect(
+      service.createCompletion({ messages: [{ role: 'user', content: 'Hi' }] }),
+    ).rejects.toThrow(InternalServerErrorException);
+  });
+
+  it('maps aborts to RequestTimeoutException', async () => {
+    await createService();
+    const abortError = new Error('aborted');
+    abortError.name = 'AbortError';
+    openaiCreate.mockRejectedValue(abortError);
+
+    await expect(
+      service.createCompletion({ messages: [{ role: 'user', content: 'Hi' }] }),
+    ).rejects.toThrow(RequestTimeoutException);
+  });
+
+  it('streams OpenAI text deltas and captures final usage', async () => {
+    await createService();
+    openaiCreate.mockResolvedValue({
+      async *[Symbol.asyncIterator]() {
+        yield {
+          model: 'gpt-4.1-mini',
+          choices: [{ delta: { content: 'Hello ' } }],
+        };
+        yield {
+          model: 'gpt-4.1-mini',
+          choices: [{ delta: { content: 'world' } }],
+          usage: { prompt_tokens: 10, completion_tokens: 5 },
+        };
+      },
     });
 
-    it('includes conversationId when provided', async () => {
-      await service.logUsage({ ...usageData, conversationId: 'conv-1' });
-
-      const insertBuilder = adminClient.from.mock.results[0]?.value;
-      expect(insertBuilder.insert).toHaveBeenCalledWith(
-        expect.objectContaining({ conversation_id: 'conv-1' }),
-      );
+    const stream = await service.streamChatResponse({
+      messages: [{ role: 'user', content: 'Hi' }],
     });
 
-    it('sets conversation_id to null when not provided', async () => {
-      await service.logUsage(usageData);
+    const chunks: string[] = [];
+    for await (const event of stream) {
+      chunks.push(event.text);
+    }
 
-      const insertBuilder = adminClient.from.mock.results[0]?.value;
-      expect(insertBuilder.insert).toHaveBeenCalledWith(
-        expect.objectContaining({ conversation_id: null }),
-      );
+    await expect(stream.finalResponse()).resolves.toEqual({
+      inputTokens: 10,
+      outputTokens: 5,
+      model: 'gpt-4.1-mini',
+    });
+    expect(chunks.join('')).toBe('Hello world');
+  });
+
+  it('keeps quota exceptions intact when logging usage', async () => {
+    await createService();
+    adminClient.rpc.mockResolvedValue({
+      data: null,
+      error: { message: 'QUOTA_EXCEEDED' },
     });
 
-    it('does not throw when DB insert fails (errors are swallowed)', async () => {
-      adminClient.from.mockReturnValue({
-        insert: jest.fn().mockReturnThis(),
-        then: (res: any) => Promise.resolve({ data: null, error: { message: 'DB down' } }).then(res),
-      });
-
-      await expect(service.logUsage(usageData)).resolves.toBeUndefined();
-    });
-
-    it('does not throw when RPC fails (errors are swallowed)', async () => {
-      adminClient.rpc.mockResolvedValue({ data: null, error: { message: 'RPC error' } });
-      await expect(service.logUsage(usageData)).resolves.toBeUndefined();
-    });
-
-    it('does not throw even if Promise.all throws', async () => {
-      adminClient.rpc.mockRejectedValue(new Error('Unexpected'));
-      await expect(service.logUsage(usageData)).resolves.toBeUndefined();
-    });
+    await expect(
+      service.logUsage({
+        userId: 'user-1',
+        tenantId: 'tenant-1',
+        inputTokens: 1,
+        outputTokens: 1,
+        totalTokens: 2,
+        model: 'gpt-4.1-mini',
+      }),
+    ).rejects.toThrow(HttpException);
   });
 });

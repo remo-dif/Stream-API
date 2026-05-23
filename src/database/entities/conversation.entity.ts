@@ -37,8 +37,8 @@ export class Conversation {
   @Column({ length: 500, nullable: true })
   title!: string;
 
-  /** AI model used for this conversation (e.g., 'claude-3-5-sonnet-20241022') */
-  @Column({ length: 100, default: 'claude-3-5-sonnet-20241022' })
+  /** AI model used for this conversation (e.g., 'gpt-4.1-mini') */
+  @Column({ length: 100, default: 'gpt-4.1-mini' })
   model!: string;
 
   /** Flag indicating if the conversation has been archived by the user */

@@ -6,7 +6,7 @@ CREATE TABLE conversations (
   id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
   user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   title TEXT,
-  model TEXT DEFAULT 'claude-3-5-sonnet-20241022',
+  model TEXT DEFAULT 'gpt-4.1-mini',
   is_archived BOOLEAN DEFAULT false,
   metadata JSONB DEFAULT '{}'::jsonb,
   created_at TIMESTAMPTZ DEFAULT NOW(),

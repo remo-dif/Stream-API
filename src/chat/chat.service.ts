@@ -1,17 +1,46 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { SupabaseService } from '../supabase/supabase.service';
+import { DEFAULT_MODEL_BY_PROVIDER, LlmProvider } from './llm.constants';
 
 @Injectable()
 export class ChatService {
-  constructor(private readonly supabaseService: SupabaseService) {}
+  private readonly defaultModel: string;
+
+  constructor(
+    private readonly supabaseService: SupabaseService,
+    private readonly configService: ConfigService,
+  ) {
+    const provider = this.configService.get<LlmProvider>(
+      'LLM_PROVIDER',
+      LlmProvider.OPENAI,
+    );
+
+    this.defaultModel =
+      provider === LlmProvider.OPENAI
+        ? this.configService.get<string>(
+            'OPENAI_MODEL',
+            DEFAULT_MODEL_BY_PROVIDER[LlmProvider.OPENAI],
+          )
+        : this.configService.get<string>(
+            'ANTHROPIC_MODEL',
+            DEFAULT_MODEL_BY_PROVIDER[LlmProvider.ANTHROPIC],
+          );
+  }
 
   async getConversations(userId: string, tenantId: string) {
+    this.assertTenantId(tenantId);
+
     const { data, error } = await this.supabaseService
       .getAdminClient()
       .from('conversations')
       .select('id, title, model, is_archived, created_at, updated_at')
       .eq('user_id', userId)
-      .eq('tenant_id', tenantId) // tenant isolation
+      .eq('tenant_id', tenantId)
       .eq('is_archived', false)
       .order('updated_at', { ascending: false });
 
@@ -20,13 +49,16 @@ export class ChatService {
   }
 
   async createConversation(userId: string, tenantId: string, title: string) {
+    this.assertTenantId(tenantId);
+
     const { data, error } = await this.supabaseService
       .getAdminClient()
       .from('conversations')
       .insert({
         user_id: userId,
-        tenant_id: tenantId, // was missing — caused NOT NULL DB constraint violation
+        tenant_id: tenantId,
         title,
+        model: this.defaultModel,
       })
       .select()
       .single();
@@ -35,7 +67,13 @@ export class ChatService {
     return data;
   }
 
-  async getConversation(conversationId: string, userId: string, tenantId: string) {
+  async getConversation(
+    conversationId: string,
+    userId: string,
+    tenantId: string,
+  ) {
+    this.assertTenantId(tenantId);
+
     const { data, error } = await this.supabaseService
       .getAdminClient()
       .from('conversations')
@@ -52,7 +90,13 @@ export class ChatService {
     return data;
   }
 
-  async archiveConversation(conversationId: string, userId: string, tenantId: string) {
+  async archiveConversation(
+    conversationId: string,
+    userId: string,
+    tenantId: string,
+  ) {
+    this.assertTenantId(tenantId);
+
     const { data, error } = await this.supabaseService
       .getAdminClient()
       .from('conversations')
@@ -73,22 +117,17 @@ export class ChatService {
     return { success: true };
   }
 
-  /**
-   * Fetches messages with:
-   *  1. Ownership check — conversation must belong to the requesting user within the tenant.
-   *  2. Cursor-based pagination — avoids loading thousands of messages into memory.
-   */
   async getMessages(
     conversationId: string,
     userId: string,
     tenantId: string,
     limit: number = 50,
-    before?: string, // ISO timestamp cursor
+    before?: string,
   ) {
-    // Verify ownership and tenant membership in a single query
+    this.assertTenantId(tenantId);
     await this.assertConversationOwnership(conversationId, userId, tenantId);
 
-    const safeLimit = Math.min(limit, 100); // cap at 100 per page
+    const safeLimit = Math.min(limit, 100);
 
     let query = this.supabaseService
       .getAdminClient()
@@ -105,7 +144,6 @@ export class ChatService {
     const { data, error } = await query;
     if (error) throw error;
 
-    // Return in chronological order (oldest first) for rendering
     return (data ?? []).reverse();
   }
 
@@ -124,7 +162,6 @@ export class ChatService {
 
     if (error) throw error;
 
-    // Touch the conversation updated_at so ordering stays correct
     await this.supabaseService
       .getAdminClient()
       .from('conversations')
@@ -134,22 +171,20 @@ export class ChatService {
     return data;
   }
 
-  /**
-   * Verifies a conversation belongs to userId + tenantId.
-   * Throws NotFoundException (not ForbiddenException) to avoid leaking existence.
-   */
   async assertConversationOwnership(
     conversationId: string,
     userId: string,
     tenantId: string,
   ): Promise<{ id: string; model: string }> {
+    this.assertTenantId(tenantId);
+
     const { data, error } = await this.supabaseService
       .getAdminClient()
       .from('conversations')
       .select('id, model')
       .eq('id', conversationId)
       .eq('user_id', userId)
-      .eq('tenant_id', tenantId) // prevents cross-tenant reads
+      .eq('tenant_id', tenantId)
       .single();
 
     if (error || !data) {
@@ -159,10 +194,6 @@ export class ChatService {
     return data;
   }
 
-  /**
-   * Fetches recent message history for feeding into the AI context window.
-   * Limited to the most recent `contextWindow` messages to stay within token budgets.
-   */
   async getContextMessages(
     conversationId: string,
     contextWindow: number = 20,
@@ -178,9 +209,18 @@ export class ChatService {
 
     if (error) throw error;
 
-    return ((data ?? []).reverse() as any[]).map((m) => ({
-      role: m.role as 'user' | 'assistant',
-      content: m.content as string,
+    return ((data ?? []).reverse() as any[]).map((message) => ({
+      role: message.role as 'user' | 'assistant',
+      content: message.content as string,
     }));
+  }
+
+  private assertTenantId(tenantId?: string): asserts tenantId is string {
+    if (!tenantId) {
+      throw new ForbiddenException({
+        error: 'User is not assigned to a tenant',
+        code: 'TENANT_MEMBERSHIP_REQUIRED',
+      });
+    }
   }
 }

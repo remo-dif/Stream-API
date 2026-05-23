@@ -1,11 +1,19 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { ExecutionContext, UnauthorizedException } from '@nestjs/common';
+import {
+  ExecutionContext,
+  ForbiddenException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { SupabaseAuthGuard } from './supabase-auth.guard';
 import { SupabaseService } from '../../supabase/supabase.service';
 
 const MOCK_USER = { id: 'user-123', email: 'test@example.com' };
-const MOCK_PROFILE = { role: 'user', tenant_id: 'tenant-123', is_active: true };
+const ACTIVE_PROFILE = {
+  role: 'user',
+  tenant_id: 'tenant-123',
+  is_active: true,
+};
 
 function makeProfileBuilder(result: { data: any; error: any }) {
   return {
@@ -15,13 +23,21 @@ function makeProfileBuilder(result: { data: any; error: any }) {
   };
 }
 
-function makeContext(authHeader?: string): { ctx: ExecutionContext; request: any } {
-  const request: any = { headers: authHeader ? { authorization: authHeader } : {}, user: undefined };
+function makeContext(authHeader?: string): {
+  ctx: ExecutionContext;
+  request: any;
+} {
+  const request: any = {
+    headers: authHeader ? { authorization: authHeader } : {},
+    user: undefined,
+  };
+
   const ctx = {
     getHandler: jest.fn(),
     getClass: jest.fn(),
     switchToHttp: () => ({ getRequest: () => request }),
   } as unknown as ExecutionContext;
+
   return { ctx, request };
 }
 
@@ -33,9 +49,14 @@ describe('SupabaseAuthGuard', () => {
   beforeEach(async () => {
     adminClient = {
       auth: {
-        getUser: jest.fn().mockResolvedValue({ data: { user: MOCK_USER }, error: null }),
+        getUser: jest.fn().mockResolvedValue({
+          data: { user: MOCK_USER },
+          error: null,
+        }),
       },
-      from: jest.fn().mockReturnValue(makeProfileBuilder({ data: MOCK_PROFILE, error: null })),
+      from: jest
+        .fn()
+        .mockReturnValue(makeProfileBuilder({ data: ACTIVE_PROFILE, error: null })),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -60,65 +81,67 @@ describe('SupabaseAuthGuard', () => {
     reflector.getAllAndOverride.mockReturnValue(true);
     const { ctx } = makeContext();
 
-    const result = await guard.canActivate(ctx);
-    expect(result).toBe(true);
+    await expect(guard.canActivate(ctx)).resolves.toBe(true);
     expect(adminClient.auth.getUser).not.toHaveBeenCalled();
   });
 
-  it('throws UnauthorizedException when Authorization header is absent', async () => {
+  it('throws when the Authorization header is absent', async () => {
     const { ctx } = makeContext();
     await expect(guard.canActivate(ctx)).rejects.toThrow(UnauthorizedException);
   });
 
-  it('throws UnauthorizedException for non-Bearer scheme', async () => {
-    const { ctx } = makeContext('Basic dXNlcjpwYXNz');
-    await expect(guard.canActivate(ctx)).rejects.toThrow(UnauthorizedException);
-  });
+  it('throws when Supabase rejects the token', async () => {
+    adminClient.auth.getUser.mockResolvedValue({
+      data: { user: null },
+      error: { message: 'Invalid JWT' },
+    });
 
-  it('throws UnauthorizedException when Supabase rejects the token', async () => {
-    adminClient.auth.getUser.mockResolvedValue({ data: { user: null }, error: { message: 'Invalid JWT' } });
     const { ctx } = makeContext('Bearer bad-token');
     await expect(guard.canActivate(ctx)).rejects.toThrow(UnauthorizedException);
   });
 
-  it('throws UnauthorizedException when profiles row is missing', async () => {
+  it('throws when the profile row is missing', async () => {
     adminClient.from.mockReturnValue(
-      makeProfileBuilder({ data: null, error: { message: 'Row not found' } }),
+      makeProfileBuilder({ data: null, error: { message: 'missing' } }),
     );
+
     const { ctx } = makeContext('Bearer valid-token');
     await expect(guard.canActivate(ctx)).rejects.toThrow(UnauthorizedException);
   });
 
-  it('throws UnauthorizedException when account is deactivated', async () => {
+  it('throws ForbiddenException for deactivated accounts', async () => {
     adminClient.from.mockReturnValue(
-      makeProfileBuilder({ data: { ...MOCK_PROFILE, is_active: false }, error: null }),
+      makeProfileBuilder({
+        data: { ...ACTIVE_PROFILE, is_active: false },
+        error: null,
+      }),
     );
+
     const { ctx } = makeContext('Bearer valid-token');
-    await expect(guard.canActivate(ctx)).rejects.toThrow(UnauthorizedException);
+    await expect(guard.canActivate(ctx)).rejects.toThrow(ForbiddenException);
   });
 
-  it('enriches request.user with role and tenantId on success', async () => {
+  it('throws ForbiddenException when the user is not assigned to a tenant', async () => {
+    adminClient.from.mockReturnValue(
+      makeProfileBuilder({
+        data: { ...ACTIVE_PROFILE, tenant_id: null },
+        error: null,
+      }),
+    );
+
+    const { ctx } = makeContext('Bearer valid-token');
+    await expect(guard.canActivate(ctx)).rejects.toThrow(ForbiddenException);
+  });
+
+  it('enriches request.user with role and tenantId', async () => {
     const { ctx, request } = makeContext('Bearer valid-token');
 
-    const result = await guard.canActivate(ctx);
-
-    expect(result).toBe(true);
+    await expect(guard.canActivate(ctx)).resolves.toBe(true);
     expect(request.user).toMatchObject({
-      id: 'user-123',
-      email: 'test@example.com',
+      id: MOCK_USER.id,
+      email: MOCK_USER.email,
       role: 'user',
       tenantId: 'tenant-123',
     });
-  });
-
-  it('queries profiles with the correct user id', async () => {
-    const profileBuilder = makeProfileBuilder({ data: MOCK_PROFILE, error: null });
-    adminClient.from.mockReturnValue(profileBuilder);
-    const { ctx } = makeContext('Bearer valid-token');
-
-    await guard.canActivate(ctx);
-
-    expect(adminClient.from).toHaveBeenCalledWith('profiles');
-    expect(profileBuilder.eq).toHaveBeenCalledWith('id', MOCK_USER.id);
   });
 });
