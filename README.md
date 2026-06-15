@@ -188,6 +188,24 @@ npm run test:cov
 
 This repo includes a `Jenkinsfile` for GitHub-driven CI.
 
+Run Jenkins locally with Docker:
+
+```bash
+docker compose -f docker-compose.jenkins.yml up -d --build
+```
+
+Open Jenkins:
+
+```text
+http://localhost:8081
+```
+
+Get the initial admin password:
+
+```bash
+docker exec stream-jenkins cat /var/jenkins_home/secrets/initialAdminPassword
+```
+
 The Jenkins agent should have:
 - Node.js 20+
 - npm
