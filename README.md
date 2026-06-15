@@ -134,9 +134,7 @@ http://localhost:3000/api/docs
 
 ## Frontend Pairing
 
-This backend is designed to run with the sibling Next.js app in:
-
-[`C:\Users\ASUS\Desktop\projects\stream-ui`](/C:/Users/ASUS/Desktop/projects/stream-ui)
+This backend is designed to run with the `Stream-UI` Next.js app.
 
 Typical local ports:
 - API: `http://localhost:3000`
@@ -185,6 +183,48 @@ Coverage:
 ```bash
 npm run test:cov
 ```
+
+## Jenkins CI
+
+This repo includes a `Jenkinsfile` for GitHub-driven CI.
+
+The Jenkins agent should have:
+- Node.js 20+
+- npm
+- Docker Engine with Docker Compose v2
+- access to the Docker socket if Jenkins runs in a container
+
+Recommended Jenkins plugins:
+- Git
+- GitHub
+- Pipeline
+- AnsiColor
+- Workspace Cleanup
+
+Create the job in Jenkins:
+
+```text
+New Item -> Pipeline -> Pipeline script from SCM
+SCM: Git
+Repository URL: https://github.com/remo-dif/Stream-API.git
+Script Path: Jenkinsfile
+```
+
+Enable GitHub webhooks:
+
+```text
+GitHub repo -> Settings -> Webhooks -> Add webhook
+Payload URL: https://your-jenkins-domain/github-webhook/
+Content type: application/json
+Events: Just the push event
+```
+
+The pipeline runs:
+- dependency install
+- unit tests
+- production build
+- API Docker image build
+- Docker Compose config smoke check without printing environment secrets
 
 ## Current Status
 

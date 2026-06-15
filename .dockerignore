@@ -4,3 +4,7 @@ node_modules
 dist
 .git
 .claude
+coverage
+npm-debug.log*
+frontend-*.log
+backend-*.log
