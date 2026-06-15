@@ -86,7 +86,7 @@ describe('QuotaGuard', () => {
 
     try {
       await guard.canActivate(ctx);
-      fail('Expected exception');
+      throw new Error('Expected exception');
     } catch (e: any) {
       expect(e).toBeInstanceOf(HttpException);
       expect(e.getStatus()).toBe(HttpStatus.FORBIDDEN);

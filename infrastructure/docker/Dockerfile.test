@@ -1,0 +1,14 @@
+FROM node:20-alpine
+
+WORKDIR /app
+
+# Tests need devDependencies for Jest, ts-jest, and coverage reporters.
+COPY package*.json ./
+RUN npm ci
+
+COPY . .
+
+ENV NODE_ENV=test
+
+# The test image exits after producing coverage and JUnit artifacts.
+CMD ["npm", "run", "test:cov"]

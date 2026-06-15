@@ -1,0 +1,57 @@
+services:
+  backend-test:
+    build:
+      context: ../..
+      dockerfile: infrastructure/docker/Dockerfile.test
+    env_file:
+      - path: ../../.env.test
+        required: false
+    environment:
+      # Test services use isolated databases so CI cannot mutate dev/staging data.
+      NODE_ENV: test
+      SUPABASE_URL: ${SUPABASE_URL:-https://example-test.supabase.co}
+      SUPABASE_KEY: ${SUPABASE_KEY:-test-supabase-key-placeholder}
+      SUPABASE_ANON_KEY: ${SUPABASE_KEY:-test-supabase-key-placeholder}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_KEY:-test-supabase-key-placeholder}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-test-anthropic-key-placeholder}
+      LLM_PROVIDER: ${LLM_PROVIDER:-anthropic}
+      REDIS_HOST: redis-test
+      REDIS_PORT: 6379
+      REDIS_URL: redis://redis-test:6379
+      DATABASE_URL: postgresql://postgres:postgres@postgres-test:5432/stream_api_test
+      JWT_SECRET: ${JWT_SECRET:-test-jwt-secret-placeholder}
+    volumes:
+      # Coverage is mounted out of the container for Jenkins report publishing.
+      - ../../coverage:/app/coverage
+    depends_on:
+      postgres-test:
+        condition: service_healthy
+      redis-test:
+        condition: service_healthy
+
+  postgres-test:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: stream_api_test
+    tmpfs:
+      # Test database is intentionally ephemeral for repeatable CI runs.
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis-test:
+    image: redis:7-alpine
+    command: redis-server --save ""
+    tmpfs:
+      # Redis state is not needed after a test run.
+      - /data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10

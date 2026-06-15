@@ -11,6 +11,7 @@ import { DEFAULT_MODEL_BY_PROVIDER, LlmProvider } from '../chat/llm.constants';
 
 enum Environment {
   Development = 'development',
+  Staging = 'staging',
   Production = 'production',
   Test = 'test',
 }
