@@ -9,11 +9,7 @@ const config: Config = {
   },
   collectCoverageFrom: ['**/*.(t|j)s', '!**/*.spec.ts', '!**/index.ts'],
   coverageDirectory: '../coverage',
-  reporters: [
-    'default',
-    // Jenkins publishes this file with the JUnit plugin after npm run test:cov.
-    ['jest-junit', { outputDirectory: 'coverage', outputName: 'junit.xml' }],
-  ],
+  reporters: ['default', ['jest-junit', { outputDirectory: '../coverage', outputName: 'junit.xml' }]],
   testEnvironment: 'node',
   clearMocks: true,
 };

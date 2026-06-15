@@ -10,19 +10,22 @@ services:
       # Test services use isolated databases so CI cannot mutate dev/staging data.
       NODE_ENV: test
       SUPABASE_URL: ${SUPABASE_URL:-https://example-test.supabase.co}
-      SUPABASE_KEY: ${SUPABASE_KEY:-test-supabase-key-placeholder}
-      SUPABASE_ANON_KEY: ${SUPABASE_KEY:-test-supabase-key-placeholder}
-      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_KEY:-test-supabase-key-placeholder}
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-test-anthropic-key-placeholder}
-      LLM_PROVIDER: ${LLM_PROVIDER:-anthropic}
+      SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY:-your-test-anon-key}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:-your-test-service-role-key}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:3000}
+      LLM_PROVIDER: ${LLM_PROVIDER:-openai}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-sk-test-placeholder}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4.1-mini}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-sk-ant-test-placeholder}
+      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-3-5-sonnet-20241022}
       REDIS_HOST: redis-test
       REDIS_PORT: 6379
       REDIS_URL: redis://redis-test:6379
-      DATABASE_URL: postgresql://postgres:postgres@postgres-test:5432/stream_api_test
-      JWT_SECRET: ${JWT_SECRET:-test-jwt-secret-placeholder}
     volumes:
       # Coverage is mounted out of the container for Jenkins report publishing.
       - ../../coverage:/app/coverage
+      # jest-junit writes to ../coverage from /app, so this keeps junit.xml on the host too.
+      - ../../coverage:/coverage
     depends_on:
       postgres-test:
         condition: service_healthy

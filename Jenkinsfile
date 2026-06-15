@@ -41,7 +41,7 @@ pipeline {
           }
 
           env.IMAGE_TAG = "${env.REGISTRY}/${env.IMAGE_NAME}:${env.DEPLOY_ENV}-${env.GIT_SHA}"
-          env.LATEST_TAG = "${env.REGISTRY}/${env.IMAGE_NAME}:${env.DEPLOY_ENV}-latest"
+          env.IMAGE_LATEST = "${env.REGISTRY}/${env.IMAGE_NAME}:${env.DEPLOY_ENV}-latest"
         }
       }
     }
@@ -96,9 +96,9 @@ pipeline {
           sh '''
             set -eu
             echo "$DOCKERHUB_PASSWORD" | docker login --username "$DOCKERHUB_USERNAME" --password-stdin
-            docker build -f "$DOCKERFILE" -t "$IMAGE_TAG" -t "$LATEST_TAG" .
+            docker build -f "$DOCKERFILE" -t "$IMAGE_TAG" -t "$IMAGE_LATEST" .
             docker push "$IMAGE_TAG"
-            docker push "$LATEST_TAG"
+            docker push "$IMAGE_LATEST"
           '''
         }
       }
@@ -111,11 +111,18 @@ pipeline {
       steps {
         withCredentials([
           string(credentialsId: 'SUPABASE_URL', variable: 'SUPABASE_URL'),
-          string(credentialsId: 'SUPABASE_KEY', variable: 'SUPABASE_KEY'),
-          string(credentialsId: 'ANTHROPIC_API_KEY', variable: 'ANTHROPIC_API_KEY'),
+          string(credentialsId: 'SUPABASE_ANON_KEY', variable: 'SUPABASE_ANON_KEY'),
+          string(credentialsId: 'SUPABASE_SERVICE_ROLE_KEY', variable: 'SUPABASE_SERVICE_ROLE_KEY'),
           string(credentialsId: 'REDIS_URL', variable: 'REDIS_URL'),
-          string(credentialsId: 'DATABASE_URL', variable: 'DATABASE_URL'),
-          string(credentialsId: 'JWT_SECRET', variable: 'JWT_SECRET')
+          string(credentialsId: 'REDIS_HOST', variable: 'REDIS_HOST'),
+          string(credentialsId: 'REDIS_PORT', variable: 'REDIS_PORT'),
+          string(credentialsId: 'LLM_PROVIDER', variable: 'LLM_PROVIDER'),
+          string(credentialsId: 'OPENAI_API_KEY', variable: 'OPENAI_API_KEY'),
+          string(credentialsId: 'OPENAI_MODEL', variable: 'OPENAI_MODEL'),
+          string(credentialsId: 'ANTHROPIC_API_KEY', variable: 'ANTHROPIC_API_KEY'),
+          string(credentialsId: 'ANTHROPIC_MODEL', variable: 'ANTHROPIC_MODEL'),
+          string(credentialsId: 'ALLOWED_ORIGINS', variable: 'ALLOWED_ORIGINS'),
+          string(credentialsId: 'PORT', variable: 'PORT')
         ]) {
           sh '''
             set -eu
@@ -133,7 +140,7 @@ pipeline {
         sh '''
           set -eu
           for attempt in 1 2 3 4 5; do
-            if curl --fail --silent --show-error http://localhost:3000/health; then
+            if curl --fail --silent --show-error "http://localhost:${PORT:-3000}/health"; then
               exit 0
             fi
 

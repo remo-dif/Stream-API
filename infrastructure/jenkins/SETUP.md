@@ -52,11 +52,18 @@ Create credentials from `Manage Jenkins -> Credentials -> System -> Global crede
 | --- | --- | --- |
 | `dockerhub-credentials` | Username with password | Docker Hub username and token/password used to push Stream-API images. |
 | `SUPABASE_URL` | Secret text | Supabase project URL for the target environment. |
-| `SUPABASE_KEY` | Secret text | Supabase key injected into environment-specific Compose deployments. |
-| `ANTHROPIC_API_KEY` | Secret text | Anthropic API key used when the Anthropic provider path is enabled. |
+| `SUPABASE_ANON_KEY` | Secret text | Supabase anonymous key for the target environment. |
+| `SUPABASE_SERVICE_ROLE_KEY` | Secret text | Supabase service role key for server-side operations in the target environment. |
 | `REDIS_URL` | Secret text | Redis connection URL for the target environment. |
-| `DATABASE_URL` | Secret text | Database connection URL for the target environment. |
-| `JWT_SECRET` | Secret text | JWT signing secret for the target environment. |
+| `REDIS_HOST` | Secret text | Redis host name for the target environment. |
+| `REDIS_PORT` | Secret text | Redis port for the target environment. |
+| `LLM_PROVIDER` | Secret text | Active LLM provider, such as `openai` or `anthropic`. |
+| `OPENAI_API_KEY` | Secret text | OpenAI API key for the target environment. |
+| `OPENAI_MODEL` | Secret text | OpenAI model name for the target environment. |
+| `ANTHROPIC_API_KEY` | Secret text | Anthropic API key used when the Anthropic provider path is enabled. |
+| `ANTHROPIC_MODEL` | Secret text | Anthropic model name for the target environment. |
+| `ALLOWED_ORIGINS` | Secret text | Comma-separated CORS origins allowed for the target environment. |
+| `PORT` | Secret text | Public API port used by deploy and health check steps. |
 
 Use the exact credential IDs above. Jenkins resolves credentials by ID, so a naming mismatch fails the pipeline before deployment.
 
